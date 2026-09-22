@@ -1,0 +1,18 @@
+name: Feature request / 功能建议
+description: Suggest a research capability or workflow improvement.
+title: "[Feature] "
+body:
+  - type: textarea
+    id: use_case
+    attributes:
+      label: User workflow / 使用场景
+      description: Describe what you want to achieve and who benefits.
+    validations:
+      required: true
+  - type: textarea
+    id: result
+    attributes:
+      label: Desired result / 期望结果
+      description: Include a concrete example and how success could be checked.
+    validations:
+      required: true

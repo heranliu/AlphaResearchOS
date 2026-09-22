@@ -1,0 +1,30 @@
+name: Bug report / 问题反馈
+description: Report a reproducible problem in the workbench or research workflow.
+title: "[Bug] "
+body:
+  - type: textarea
+    id: behavior
+    attributes:
+      label: What happened? / 实际现象
+      description: Include the expected result and the actual result.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce / 复现步骤
+      description: Include the exact command or CSV validation message.
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Environment / 环境
+      placeholder: "OS, Python version, AlphaResearchOS version"
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or screenshots / 日志或截图
+      description: Remove credentials and personal paths before attaching logs.

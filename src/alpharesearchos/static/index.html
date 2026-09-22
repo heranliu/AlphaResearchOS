@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>AlphaResearchOS · 自动量化研究</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <script src="/static/app.js" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#workspace">跳到研究结果</a>
+  <aside class="sidebar">
+    <a class="brand" href="/" aria-label="AlphaResearchOS 首页"><span class="brand-mark">α</span><span>AlphaResearch<span class="brand-os">OS</span><small>量化研究工作台</small></span></a>
+    <nav class="app-navigation" aria-label="主要功能">
+      <button type="button" class="nav-item active" data-page="research"><span aria-hidden="true">◈</span> 自动研究</button>
+      <button type="button" class="nav-item" data-page="library"><span aria-hidden="true">▦</span> 因子库</button>
+      <button type="button" class="nav-item" data-page="backtest"><span aria-hidden="true">⌁</span> 独立回测</button>
+      <button type="button" class="nav-item" data-page="settings"><span aria-hidden="true">⚙</span> 设置</button>
+    </nav>
+    <div class="sidebar-heading"><span class="nav-label">最近实验</span><button id="refresh-runs" class="icon-button" aria-label="刷新实验列表" title="刷新实验列表">↻</button></div>
+    <div id="run-list" class="run-list" aria-label="最近实验"><p class="muted small">正在读取实验…</p></div>
+    <div class="sidebar-bottom"><span class="connection-dot" id="connection-dot"></span><span id="connection-state">连接本地研究引擎…</span><small id="version">LOCAL WORKSPACE</small></div>
+  </aside>
+  <main id="workspace">
+    <header class="topbar"><h1 id="page-title">自动研究</h1><span id="model-status" class="status neutral">正在读取模型状态</span></header>
+    <div id="global-error" class="notice error" role="alert" hidden></div>
+    <input id="dataset-file" type="file" accept=".csv,text/csv" hidden>
+    <div id="dataset-import-message" class="notice" role="status" hidden></div>
+    <div id="page-research" class="page-pane">
+    <div class="workspace-grid">
+      <section class="panel configuration" id="configuration" aria-labelledby="config-title">
+        <div class="panel-heading"><div><h2 id="config-title">新建研究</h2></div></div>
+        <form id="run-form">
+          <label for="direction">研究假设 <span class="optional">自然语言</span></label>
+          <textarea id="direction" name="direction" rows="4" maxlength="2000" required placeholder="例如：寻找兼顾中期动量与低波动的因子，减少换手，检验交易成本后的稳定性。">寻找具有稳定动量和低波动特征的因子，控制换手与交易成本。</textarea>
+          <div class="preset-chips" aria-label="研究方向预设"><button type="button" data-direction="动量">动量</button><button type="button" data-direction="反转">反转</button><button type="button" data-direction="低波动">低波动</button><button type="button" data-direction="量价">量价</button></div>
+          <div id="research-seeds" class="selected-factors" hidden></div>
+          <div class="dataset-heading"><label for="dataset">研究数据</label><button type="button" class="button small secondary" data-import-dataset>导入 CSV</button></div><select id="dataset" name="dataset" required disabled><option value="">请先导入 CSV</option></select><p id="dataset-note" class="field-note">正在读取数据集信息…</p>
+          <details class="dataset-format"><summary>CSV 格式</summary><code>date,symbol,open,high,low,close,volume</code><p>UTF-8 · 最大 20 MB · 日期 YYYY-MM-DD。3–100 个资产，400–20,000 个共同交易日；自动研究至少需 468 日。价格为正、成交量非负，每个日期与资产一行。</p></details>
+          <div class="agent-mode"><input id="run-mode" type="hidden" name="mode" value="agent"><span class="status ok">自主研究</span><button type="button" class="text-button" data-page="settings">配置模型</button></div><p id="mode-note" class="field-note">正在读取模型配置…</p>
+          <div class="form-grid"><div><label for="trials">候选预算</label><input id="trials" name="trials" type="number" min="1" max="200" step="1" value="6" required></div><div><label for="seed">随机种子</label><input id="seed" name="seed" type="number" min="0" max="4294967295" step="1" value="42" required></div><div><label for="cost-bps">单边成本 <span class="optional">bps</span></label><input id="cost-bps" name="cost_bps" type="number" min="0" max="200" step="0.1" value="10" required></div><div><label for="top-k">持仓数量</label><input id="top-k" name="top_k" type="number" min="1" max="100" step="1" value="3" required></div></div>
+          <label for="rebalance">调仓间隔 <span class="optional">交易日</span></label><input id="rebalance" name="rebalance_every" type="number" min="1" max="63" step="1" value="5" required>
+          <details class="advanced-config constraints-config"><summary>研究约束</summary><div class="form-grid"><div><label for="required-window">指定窗口 / 日</label><input id="required-window" name="required_window" type="number" min="3" max="60" step="1" placeholder="不限"></div><div><label for="max-turnover">平均换手上限 / %</label><input id="max-turnover" name="max_turnover" type="number" min="0" max="200" step="1" placeholder="不限"></div></div><fieldset class="forbidden-fields"><legend>禁用字段</legend><label><input type="checkbox" name="forbidden_fields" value="volume">成交量</label><label><input type="checkbox" name="forbidden_fields" value="open">开盘价</label><label><input type="checkbox" name="forbidden_fields" value="high">最高价</label><label><input type="checkbox" name="forbidden_fields" value="low">最低价</label><label><input type="checkbox" name="forbidden_fields" value="close">收盘价</label></fieldset></details>
+          <details class="advanced-config"><summary>运行预算</summary><div class="form-grid"><div><label for="max-seconds">最长运行 / 秒</label><input id="max-seconds" name="max_seconds" type="number" min="1" max="3600" value="900" required></div><div><label for="max-llm-calls">模型请求上限</label><input id="max-llm-calls" name="max_llm_calls" type="number" min="0" max="100" value="12" required></div><div class="span-all"><label for="max-llm-tokens">模型 Token 预算</label><input id="max-llm-tokens" name="max_llm_tokens" type="number" min="0" max="2000000" value="786432" required></div></div></details>
+          <button id="start-run" type="submit" class="button primary" disabled>开始研究 <span aria-hidden="true">↗</span></button><p class="form-footnote">模型提出方案与复核，本地训练、验证和回测。</p>
+        </form>
+      </section>
+      <div class="results-column">
+        <section class="panel run-overview" aria-labelledby="run-title"><div class="panel-heading"><div><h2 id="run-title">尚未选择实验</h2></div><span id="run-status" class="status neutral">等待任务</span></div><p id="run-subtitle" class="muted">新建研究或选择历史实验。</p><div id="stage-track" class="stage-track" aria-label="研究阶段"><span>01 提案与复核</span><span>02 特征与训练</span><span>03 滚动验证</span><span>04 留出检验</span></div><div class="progress-row"><span id="progress-label">尚未开始</span><span id="elapsed">—</span></div><progress id="progress" max="1" value="0" aria-label="候选验证进度"></progress><div class="run-bottom"><span id="source-label" class="small muted">数据来源将在运行后显示</span><button id="pause-run" type="button" class="button small secondary" hidden>暂停</button><button id="resume-run" class="button small secondary" hidden>恢复实验</button></div></section>
+        <section id="research-memory" class="panel memory-panel" hidden><div class="panel-heading"><h2>研究记忆</h2><span id="research-models" class="muted small"></span></div><div id="memory-summary" class="memory-summary"></div></section>
+        <div id="run-warnings" aria-live="polite"></div>
+        <section class="metrics-grid" aria-label="留出期指标"><div class="metric-card"><span>留出期累计收益</span><strong id="metric-return">—</strong><small id="metric-return-note">等待留出检验</small></div><div class="metric-card"><span>年化夏普比率</span><strong id="metric-sharpe">—</strong><small id="metric-sharpe-note">基于扣费后的日收益</small></div><div class="metric-card"><span>最大回撤</span><strong id="metric-drawdown">—</strong><small>留出期</small></div><div class="metric-card"><span>相对基准收益差</span><strong id="metric-excess">—</strong><small>策略收益 − 等权基准收益</small></div></section>
+        <section class="panel chart-panel" aria-labelledby="chart-title"><div class="panel-heading"><div><h2 id="chart-title">留出期净值</h2></div><span id="holdout-badge" class="status neutral">等待最终候选</span></div><div class="chart-legend"><span><i class="legend-strategy"></i>最终候选</span><span><i class="legend-benchmark"></i>等权基准</span></div><div id="equity-chart" class="equity-chart"><div class="empty-state"><span class="empty-symbol" aria-hidden="true">⌁</span><p>暂无净值数据</p><small>研究完成后显示留出期结果。</small></div></div><div class="chart-caption"><span id="chart-period">留出期未评估</span><span>起始资金归一化 · 已计交易成本</span></div></section>
+        <section class="panel baseline-panel" aria-labelledby="baseline-title"><div class="panel-heading"><h2 id="baseline-title">基线对照</h2><span class="muted small">留出期</span></div><div class="table-scroll"><table class="baseline-table"><thead><tr><th scope="col">策略</th><th scope="col">扣费累计收益</th><th scope="col">年化 Sharpe</th><th scope="col">最大回撤</th></tr></thead><tbody id="baseline-body"><tr><td colspan="4" class="table-empty">等待留出检验</td></tr></tbody></table></div></section>
+      </div>
+    </div>
+    <section id="trials-section" class="panel trials-panel" aria-labelledby="trials-title"><div class="panel-heading"><div><h2 id="trials-title">研究候选 <span id="trial-count" class="count">0</span></h2></div><label class="table-filter">筛选<select id="trial-filter"><option value="all">全部候选</option><option value="ok">通过验证</option><option value="rejected">已拒绝</option><option value="failed">执行失败</option></select></label></div><div class="table-scroll"><table><thead><tr><th>候选 / 假设</th><th>特征</th><th>开发期评分</th><th>开发期夏普</th><th>模型</th><th>状态 / 复核</th></tr></thead><tbody id="trials-body"><tr><td colspan="6" class="table-empty">尚无候选。开始实验后，验证结果会自动更新。</td></tr></tbody></table></div><p class="table-note">评分只使用开发期的滚动验证结果。点击候选查看来源、验证详情与拒绝原因。</p></section>
+    <div class="detail-grid"><section class="panel" aria-labelledby="lineage-title"><div class="panel-heading"><div><h2 id="lineage-title">候选详情与研究轨迹</h2></div></div><div id="candidate-detail" class="detail-content"><p class="muted">选择表格中的候选，查看研究假设与推导过程。</p></div></section><section class="panel" aria-labelledby="events-title"><div class="panel-heading"><div><h2 id="events-title">研究日志</h2></div><span id="event-count" class="count">0</span></div><div id="event-log" class="event-log" aria-live="polite"><p class="muted">等待研究事件…</p></div></section></div>
+    <section class="panel artifacts-panel"><div><h2>导出实验</h2></div><div id="artifact-links" class="artifact-links"><span class="muted small">实验产物将在运行后生成</span></div></section>
+    </div>
+    <section id="page-library" class="page-pane" hidden aria-label="因子库">
+      <div class="page-toolbar"><div><h2>因子库 <span id="library-count" class="count">0</span></h2><p class="muted small">研究因子与导入表达式；评分需在相同数据与验证协议内比较。</p></div><div class="toolbar-actions"><button id="library-refresh" type="button" class="button secondary">刷新</button><button id="library-import" type="button" class="button secondary">导入 JSON</button><input id="factor-file" type="file" accept=".json,application/json" hidden><button id="library-export" type="button" class="button secondary">导出 JSON</button></div></div>
+      <div id="library-message" class="notice" role="status" hidden></div>
+      <section class="panel"><div class="library-controls"><label class="search-field"><span class="visually-hidden">搜索因子</span><input id="factor-search" type="search" placeholder="搜索名称、表达式或假设"></label><label class="form-field compact">排序<select id="factor-sort"><option value="recent">最新入库</option><option value="score">开发期评分（需同数据比较）</option><option value="name">名称</option></select></label></div><div class="selection-bar"><span id="factor-selection-count">已选 0 个</span><div class="toolbar-actions"><button id="factor-clear" type="button" class="button small secondary">清空</button><button id="factor-to-research" type="button" class="button small secondary" disabled>用于研究</button><button id="factor-to-backtest" type="button" class="button small primary" disabled>独立回测</button></div></div><div class="table-scroll"><table><thead><tr><th><input id="factor-select-all" type="checkbox" aria-label="选择当前筛选结果"></th><th>名称 / 假设</th><th>表达式</th><th>开发期评分</th><th>来源</th><th>操作</th></tr></thead><tbody id="library-body"><tr><td colspan="6" class="table-empty">正在读取因子库…</td></tr></tbody></table></div></section>
+      <section class="panel library-detail-panel"><div class="panel-heading"><h2>因子详情</h2></div><div id="library-detail" class="detail-content"><p class="muted">选择因子查看表达式、验证指标与来源。</p></div></section>
+    </section>
+    <section id="page-backtest" class="page-pane" hidden aria-label="独立回测">
+      <div class="page-toolbar"><div><h2>独立回测</h2><p class="muted small">固定已选因子进行回测；多因子按等权排名合成。</p></div><label class="form-field compact">历史回测<select id="backtest-history"><option value="">新建回测</option></select></label></div>
+      <div class="workspace-grid">
+        <section class="panel configuration"><div class="panel-heading"><h2>回测配置</h2><button type="button" class="button small secondary" data-page="library">选择因子</button></div><form id="backtest-form">
+          <div id="backtest-factors" class="selected-factors"><p class="muted small">请从因子库选择 1–10 个因子。</p></div>
+          <div class="dataset-heading"><label for="backtest-dataset">数据集</label><button type="button" class="button small secondary" data-import-dataset>导入 CSV</button></div><select id="backtest-dataset" name="dataset" required disabled><option value="">请先导入 CSV</option></select><p id="backtest-dataset-note" class="field-note"></p>
+          <details class="dataset-format"><summary>CSV 格式</summary><code>date,symbol,open,high,low,close,volume</code><p>UTF-8 · 最大 20 MB · 日期 YYYY-MM-DD。3–100 个资产，400–20,000 个共同交易日。价格为正、成交量非负，每个日期与资产一行。</p></details>
+          <div class="form-grid"><div><label for="backtest-start">开始日期</label><input id="backtest-start" name="start_date" type="date"></div><div><label for="backtest-end">结束日期</label><input id="backtest-end" name="end_date" type="date"></div><div><label for="backtest-cost">单边成本 / bps</label><input id="backtest-cost" name="cost_bps" type="number" min="0" max="200" step="0.1" value="10" required></div><div><label for="backtest-top-k">持仓数量</label><input id="backtest-top-k" name="top_k" type="number" min="1" max="100" value="3" required></div></div>
+          <label for="backtest-rebalance">调仓间隔 / 交易日</label><input id="backtest-rebalance" name="rebalance_every" type="number" min="1" max="63" value="5" required><button id="start-backtest" type="submit" class="button primary" disabled>开始回测 ↗</button><p class="field-note">日期留空使用可用数据区间；结束日期包含当天。</p>
+        </form></section>
+        <div class="results-column"><section class="panel"><div class="panel-heading"><h2 id="backtest-title">尚无回测结果</h2><span id="backtest-status" class="status neutral">待运行</span></div><p id="backtest-period" class="result-summary muted">从因子库选择因子后开始回测。</p></section><div id="backtest-warnings"></div>
+          <div class="metrics-grid"><div class="metric-card"><span>累计收益</span><strong id="bt-return">—</strong><small>扣除交易成本</small></div><div class="metric-card"><span>年化夏普比率</span><strong id="bt-sharpe">—</strong><small>回测区间</small></div><div class="metric-card"><span>最大回撤</span><strong id="bt-drawdown">—</strong><small>回测区间</small></div><div class="metric-card"><span>相对基准收益差</span><strong id="bt-excess">—</strong><small>等权基准</small></div></div>
+          <section class="panel chart-panel"><div class="panel-heading"><h2>净值</h2></div><div class="chart-legend"><span><i class="legend-strategy"></i>所选因子</span><span><i class="legend-benchmark"></i>等权基准</span></div><div id="backtest-chart" class="equity-chart"></div></section>
+          <section class="panel chart-panel"><div class="panel-heading"><h2>回撤</h2></div><div class="chart-legend"><span><i class="legend-strategy"></i>所选因子</span><span><i class="legend-benchmark"></i>等权基准</span></div><div id="backtest-drawdown-chart" class="equity-chart compact-chart"></div></section>
+        </div>
+      </div><section class="panel artifacts-panel"><div><h2>导出回测</h2><p id="backtest-factor-summary" class="muted"></p></div><div id="backtest-artifacts" class="artifact-links"><span class="muted small">回测完成后可导出</span></div></section>
+    </section>
+    <section id="page-settings" class="page-pane" hidden aria-label="设置">
+      <div class="page-toolbar"><div><h2>模型连接</h2><p id="settings-source" class="muted small">正在读取配置…</p></div><button id="settings-refresh" type="button" class="button secondary">重新读取</button></div>
+      <div class="settings-grid">
+        <section class="panel"><form id="settings-form" class="settings-form">
+          <label class="form-field" for="settings-provider">模型提供方<select id="settings-provider" name="provider"><option value="openai_compatible">兼容 OpenAI 的 API</option><option value="codex_cli">本机 Codex</option></select></label>
+          <div id="settings-api-fields" class="provider-fields">
+            <label class="form-field" for="settings-url">API Base URL<input id="settings-url" name="base_url" type="url" placeholder="https://api.example.com/v1" required></label>
+            <label class="form-field" for="settings-model">模型名称<input id="settings-model" name="model" type="text" placeholder="填写服务商提供的模型 ID" required></label>
+            <label class="form-field" for="settings-key">API 密钥 <span id="settings-key-status" class="small muted"></span><input id="settings-key" name="api_key" type="password" autocomplete="new-password" placeholder="留空保留已保存密钥"></label>
+            <label class="check-field"><input id="settings-clear-key" name="clear_api_key" type="checkbox">清除现有密钥</label>
+            <div class="form-grid"><label class="form-field" for="settings-token-field">Token 参数<select id="settings-token-field" name="token_field"><option value="max_completion_tokens">max_completion_tokens</option><option value="max_tokens">max_tokens</option></select></label><label class="form-field" for="settings-temperature">Temperature<input id="settings-temperature" name="temperature" type="number" min="0" max="2" step="0.1" placeholder="留空使用模型默认值"></label></div>
+          </div>
+          <div id="settings-codex-fields" class="provider-fields" hidden><label class="form-field" for="settings-codex-model">Codex 模型 <span class="small muted">可选</span><input id="settings-codex-model" name="codex_model" type="text" placeholder="使用本机 Codex 当前模型" disabled></label><p class="field-note">使用本机 Codex 当前登录账户，无需填写 API 密钥。</p></div>
+          <div class="toolbar-actions"><button id="settings-save" class="button primary" type="submit">保存配置</button><button id="settings-test" class="button secondary" type="button">测试连接</button></div>
+          <p class="field-note">测试连接会发送一次模型请求；请先保存修改。</p>
+        </form></section>
+        <section class="panel settings-status-panel"><div class="panel-heading"><h2>连接状态</h2><span id="settings-status" class="status neutral">未读取</span></div><div id="settings-codex-status" class="provider-status" hidden></div><div id="settings-message" class="settings-message muted" role="status">保存模型连接后，可运行自主研究。</div></section>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

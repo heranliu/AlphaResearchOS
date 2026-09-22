@@ -1,0 +1,5 @@
+[
+  {"name": "FM 短期反转", "hypothesis": "短期价格冲击可能均值回归", "formula": "Neg(CsRank(Return($close,5)))"},
+  {"name": "FM 中期动量", "hypothesis": "价格趋势可能延续", "formula": "CsRank(Return($close,20))"},
+  {"name": "FM 低波动", "hypothesis": "低历史波动可能提高组合稳定性", "formula": "Neg(CsRank(Std(Return($close,1),20)))"}
+]

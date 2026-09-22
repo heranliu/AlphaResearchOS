@@ -1,0 +1,244 @@
+{
+  "title": "US sector ETF benchmark",
+  "universe": [
+    "XLB",
+    "XLE",
+    "XLF",
+    "XLI",
+    "XLK",
+    "XLP",
+    "XLU",
+    "XLV",
+    "XLY"
+  ],
+  "market_data": "Yahoo Finance, adjusted daily OHLCV",
+  "evaluation_period": {
+    "start": "2023-05-11",
+    "end": "2026-09-17",
+    "sessions": 841
+  },
+  "development_period": {
+    "start": "2011-01-03",
+    "end": "2023-05-08",
+    "folds": 3
+  },
+  "method": {
+    "selection": "Highest development score among independently approved candidates; holdout not used to select parameters.",
+    "training": "Causal pooled ridge regression; labels mature before each fit; estimator frozen before each evaluation block.",
+    "model_fit_end": "2023-05-08",
+    "model": "ridge",
+    "features": [
+      "0 - mean((high - low) / (close + 1e-06), 60)",
+      "delay(ret(close, 60), 5) / (60 * mean(delay(abs(ret(close, 1)), 5), 60) + 1e-06)"
+    ],
+    "model_params": {
+      "alpha": 100.0,
+      "train_window": 756,
+      "retrain_every": 63,
+      "horizon": 10,
+      "smoothing": 15
+    },
+    "portfolio": "Long only, equal weight among the top 3 scores; equal-weight baseline holds all 9 ETFs.",
+    "baseline_expressions": {
+      "momentum_20": "rank(ret(close, 20))",
+      "momentum_60": "rank(ret(close, 60))"
+    },
+    "cost_bps_one_way": 10.0,
+    "rebalance_sessions": 5,
+    "signal_lag_sessions": 2,
+    "annualization": 252,
+    "start_from_cash": true,
+    "terminal_liquidation": true,
+    "drawdown_reference": "Initial equity 1 and all subsequent equity peaks.",
+    "turnover_definition": "Daily absolute dollars traded divided by portfolio NAV, including drift, entry and terminal liquidation.",
+    "curve_generation": "Daily portfolio equity computed from the same adjusted price panel and trading rules for all four strategies.",
+    "cost_sensitivity": "Identical fixed scores and training; transaction cost varied without reselection."
+  },
+  "strategies": {
+    "alphaos": {
+      "label": "AlphaResearchOS",
+      "metrics": {
+        "total_return": 1.1753233795183589,
+        "cagr": 0.2622249118534296,
+        "sharpe": 1.5608103989926787,
+        "max_drawdown": -0.1621196592546954,
+        "annual_vol": 0.15711426536914339,
+        "avg_turnover": 0.049179109194821324,
+        "days": 841,
+        "benchmark_total_return": 0.6321712680772119,
+        "excess_return": 0.543152111441147
+      }
+    },
+    "equal_weight": {
+      "label": "Equal weight",
+      "metrics": {
+        "total_return": 0.6321712680772119,
+        "cagr": 0.15812069192167524,
+        "sharpe": 1.2662353138639721,
+        "max_drawdown": -0.15611352604438078,
+        "annual_vol": 0.12181310575016839,
+        "avg_turnover": 0.005067596838988227,
+        "days": 841,
+        "benchmark_total_return": 0.6321712680772119,
+        "excess_return": 0.0
+      }
+    },
+    "momentum_20": {
+      "label": "20-day momentum",
+      "metrics": {
+        "total_return": 0.5822365543293764,
+        "cagr": 0.14738809751208778,
+        "sharpe": 1.0614896447160833,
+        "max_drawdown": -0.2121496032174618,
+        "annual_vol": 0.1386119772225269,
+        "avg_turnover": 0.13113714161814455,
+        "days": 841,
+        "benchmark_total_return": 0.6321712680772119,
+        "excess_return": -0.049934713747835535
+      }
+    },
+    "momentum_60": {
+      "label": "60-day momentum",
+      "metrics": {
+        "total_return": 0.6562758770831151,
+        "cagr": 0.16321939382332393,
+        "sharpe": 1.1822858610804494,
+        "max_drawdown": -0.1813632324354124,
+        "annual_vol": 0.13571699094472672,
+        "avg_turnover": 0.07855086786073139,
+        "days": 841,
+        "benchmark_total_return": 0.6321712680772119,
+        "excess_return": 0.024104609005903166
+      }
+    }
+  },
+  "comparisons": {
+    "equal_weight": {
+      "total_return_difference_pp": 54.31521114411469,
+      "cagr_difference_pp": 10.410421993175436,
+      "sharpe_difference": 0.29457508512870656,
+      "max_drawdown_loss_difference_pp": 0.6006133210314624,
+      "average_turnover_relative_change_pct": 870.4621491681293,
+      "average_turnover_difference_pp": 4.41115123558331
+    },
+    "momentum_20": {
+      "total_return_difference_pp": 59.30868251889825,
+      "cagr_difference_pp": 11.483681434134182,
+      "sharpe_difference": 0.4993207542765954,
+      "max_drawdown_loss_difference_pp": -5.002994396276639,
+      "average_turnover_relative_change_pct": -62.497955508268646,
+      "average_turnover_difference_pp": -8.195803242332323
+    },
+    "momentum_60": {
+      "total_return_difference_pp": 51.904750243524376,
+      "cagr_difference_pp": 9.900551803010568,
+      "sharpe_difference": 0.3785245379122293,
+      "max_drawdown_loss_difference_pp": -1.924357318071701,
+      "average_turnover_relative_change_pct": -37.39202311295327,
+      "average_turnover_difference_pp": -2.937175866591006
+    }
+  },
+  "cost_sensitivity": [
+    {
+      "cost_bps": 0.0,
+      "alphaos": {
+        "total_return": 1.267182876701588,
+        "cagr": 0.277965581146827,
+        "sharpe": 1.6403491195329434,
+        "max_drawdown": -0.16034191325921177,
+        "annual_vol": 0.15705186298597285,
+        "avg_turnover": 0.049200476986183905,
+        "days": 841,
+        "benchmark_total_return": 0.6391319563164772,
+        "excess_return": 0.6280509203851108
+      },
+      "equal_weight": {
+        "total_return": 0.6391319563164772,
+        "cagr": 0.15959842953020156,
+        "sharpe": 1.276722184873431,
+        "max_drawdown": -0.15591411286841483,
+        "annual_vol": 0.12181176606492215,
+        "avg_turnover": 0.005068822010683888,
+        "days": 841,
+        "benchmark_total_return": 0.6391319563164772,
+        "excess_return": 0.0
+      }
+    },
+    {
+      "cost_bps": 10.0,
+      "alphaos": {
+        "total_return": 1.1753233795183589,
+        "cagr": 0.2622249118534296,
+        "sharpe": 1.5608103989926787,
+        "max_drawdown": -0.1621196592546954,
+        "annual_vol": 0.15711426536914339,
+        "avg_turnover": 0.049179109194821324,
+        "days": 841,
+        "benchmark_total_return": 0.6321712680772119,
+        "excess_return": 0.543152111441147
+      },
+      "equal_weight": {
+        "total_return": 0.6321712680772119,
+        "cagr": 0.15812069192167524,
+        "sharpe": 1.2662353138639721,
+        "max_drawdown": -0.15611352604438078,
+        "annual_vol": 0.12181310575016839,
+        "avg_turnover": 0.005067596838988227,
+        "days": 841,
+        "benchmark_total_return": 0.6321712680772119,
+        "excess_return": 0.0
+      }
+    },
+    {
+      "cost_bps": 20.0,
+      "alphaos": {
+        "total_return": 1.0871953251651008,
+        "cagr": 0.24667983272048255,
+        "sharpe": 1.4808935058438863,
+        "max_drawdown": -0.16389362308072541,
+        "annual_vol": 0.15723057485221106,
+        "avg_turnover": 0.04915832131142154,
+        "days": 841,
+        "benchmark_total_return": 0.6252401397981661,
+        "excess_return": 0.4619551853669347
+      },
+      "equal_weight": {
+        "total_return": 0.6252401397981661,
+        "cagr": 0.15664483766679252,
+        "sharpe": 1.255702356161495,
+        "max_drawdown": -0.15631287092074164,
+        "annual_vol": 0.1218194263276911,
+        "avg_turnover": 0.00506637654114057,
+        "days": 841,
+        "benchmark_total_return": 0.6252401397981661,
+        "excess_return": 0.0
+      }
+    },
+    {
+      "cost_bps": 40.0,
+      "alphaos": {
+        "total_return": 0.9215089703405116,
+        "cagr": 0.21616232224217563,
+        "sharpe": 1.3202440473936499,
+        "max_drawdown": -0.16743023828528403,
+        "annual_vol": 0.15762375162016318,
+        "avg_turnover": 0.04912032258620032,
+        "days": 841,
+        "benchmark_total_return": 0.6114660317158688,
+        "excess_return": 0.3100429386246428
+      },
+      "equal_weight": {
+        "total_return": 0.6114660317158688,
+        "cagr": 0.15369876322743048,
+        "sharpe": 1.2345039507957798,
+        "max_drawdown": -0.1567113560270773,
+        "annual_vol": 0.12184694816638508,
+        "avg_turnover": 0.005063943809013042,
+        "days": 841,
+        "benchmark_total_return": 0.6114660317158688,
+        "excess_return": 0.0
+      }
+    }
+  ],
+  "curves_file": "curves.csv"
+}

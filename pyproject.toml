@@ -1,0 +1,54 @@
+[build-system]
+requires = ["hatchling>=1.26"]
+build-backend = "hatchling.build"
+
+[project]
+name = "alpharesearchos"
+version = "0.4.0"
+description = "An agentic quant research workbench with review, bounded experiments, and reproducible evidence"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = ["numpy>=1.26,<3", "pandas>=2.2,<3", "scikit-learn>=1.7,<2"]
+license = {text = "MIT"}
+keywords = ["agentic-research", "quantitative-finance", "backtesting", "research-agents", "codex"]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Scientific/Engineering :: Artificial Intelligence",
+  "Topic :: Office/Business :: Financial :: Investment",
+]
+
+[project.optional-dependencies]
+market = ["yfinance>=0.2.65,<2"]
+dev = ["pytest>=8,<10", "ruff>=0.12,<1"]
+plot = ["matplotlib>=3.9,<4"]
+
+[project.scripts]
+alphaos = "alpharesearchos.cli:entrypoint"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/alpharesearchos"]
+
+[tool.hatch.build.targets.sdist]
+include = [
+  "/.env.example", "/.gitattributes", "/.gitignore", "/.github", "/AGENTS.md", "/CHANGELOG.md",
+  "/CONTRIBUTING.md", "/LICENSE", "/Makefile", "/NOTICE.md", "/README.md",
+  "/README.zh-CN.md", "/ROADMAP.md", "/pyproject.toml", "/uv.lock",
+  "/src", "/tests", "/scripts", "/docs", "/examples",
+  "/benchmarks/sector-etf",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+
+[tool.ruff]
+line-length = 110
+target-version = "py311"
+extend-exclude = ["src/alpharesearchos/vendor"]
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "I", "B"]
