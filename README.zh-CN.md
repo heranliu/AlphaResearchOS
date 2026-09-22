@@ -39,7 +39,7 @@ uv sync --locked
 uv run alphaos serve
 ```
 
-打开 **http://127.0.0.1:8765**，按以下顺序操作：
+打开 [http://127.0.0.1:8765](http://127.0.0.1:8765/)，按以下顺序操作：
 
 1. **导入数据**：在自动研究的数据选择旁点击 **导入 CSV**。
 2. **连接模型**：在设置中选择已登录的 **Codex CLI**，或填写兼容 API 的地址、模型 ID 与密钥。
@@ -83,7 +83,7 @@ date,symbol,open,high,low,close,volume
 
 </details>
 
-[策略、开发折与成本分析](docs/BENCHMARK.md) · [基准数据](benchmarks/sector-etf/results.json) · [绘图代码](benchmarks/sector-etf/plot_benchmark.py)
+[策略、开发折与成本分析](docs/BENCHMARK.md) · [基准数据](benchmarks/sector-etf/results.json)
 
 ## 研究如何执行
 

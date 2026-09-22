@@ -39,7 +39,7 @@ uv sync --locked
 uv run alphaos serve
 ```
 
-Open **http://127.0.0.1:8765**, then:
+Open [http://127.0.0.1:8765](http://127.0.0.1:8765/), then:
 
 1. **Import your data.** In Research, click **Import CSV / 导入 CSV** beside the dataset selector.
 2. **Connect a model.** In Settings, choose your authenticated **Codex CLI** or enter a compatible API's base URL, model ID, and key.
@@ -83,7 +83,7 @@ At **40 bps one-way costs**, the strategy returned **92.15%**, compared with **6
 
 </details>
 
-[Strategy, development folds, and cost analysis](docs/BENCHMARK.md) · [Benchmark data](benchmarks/sector-etf/results.json) · [Chart source](benchmarks/sector-etf/plot_benchmark.py)
+[Strategy, development folds, and cost analysis](docs/BENCHMARK.md) · [Benchmark data](benchmarks/sector-etf/results.json)
 
 ## The research process
 
