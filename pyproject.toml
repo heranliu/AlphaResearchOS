@@ -4,8 +4,8 @@ build-backend = "hatchling.build"
 
 [project]
 name = "alpharesearchos"
-version = "0.4.0"
-description = "An agentic quant research workbench with review, bounded experiments, and reproducible evidence"
+version = "0.5.0"
+description = "Agentic quant research with predictive models, independent reviews, optional Jev checks, and reproducible backtests"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = ["numpy>=1.26,<3", "pandas>=2.2,<3", "scikit-learn>=1.7,<2"]

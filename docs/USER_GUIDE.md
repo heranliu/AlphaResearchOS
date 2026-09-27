@@ -81,6 +81,20 @@ Saved settings apply to new research. A running experiment retains the connectio
 
 Each proposal and review uses its own request. The workbench exposes request counts, returned model usage, and the reason a run stops.
 
+### Optional Jev review
+
+In Settings, enable **Jev 决策复核** to add a structured development-evidence check
+after the existing model reviewer approves a candidate. Save a separate TypeSafe
+key; the default is the fixed `jev-1.13.0` model and a `0.7` threshold. Jev is
+disabled by default and applies only to agent research. Saving or reading settings
+makes no inference request; **测试 Jev 连接** is an explicit provider request.
+
+Each Jev attempt uses one of the existing model requests and reserves 32,768
+tokens for admission. With Jev enabled, 12 requests can cover at most four
+complete proposal/review/gate sequences. Low confidence, failed checks and
+service errors do not pass selection. The candidate panel and exports include
+the recorded probabilities and usage. See [Jev configuration and protocol](JEV.md).
+
 ## Create research
 
 Return to **Research / 自动研究**, select your dataset, and enter a direction. For example:

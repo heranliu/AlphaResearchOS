@@ -15,6 +15,14 @@ AlphaResearchOS runs bounded, model-driven experiments over daily OHLCV panels. 
 
 Proposal and review are separately counted requests. Rejected, failed, and timed-out attempts remain in the experiment ledger. Review approval records technical acceptance into the research comparison. The complete measured evidence remains available in the run artifacts.
 
+An optional, default-off [Jev gate](JEV.md) adds one typed decision request after
+independent approval. Only allowlisted development evidence enters this request.
+Selection then requires both reviews to approve; uncertain or failed Jev checks
+cannot override the existing reviewer or numeric constraints. The threshold and
+provider configuration are frozen per run, and attempts share its request/time/token
+budgets. This is an evidence-review mechanism; its incremental effect on strategy
+performance has not been measured. The published ETF benchmark predates Jev.
+
 ## Features and predictive models
 
 The feature language includes `open`, `high`, `low`, `close`, and `volume`, arithmetic, positive historical windows, cross-sectional transforms, and a bounded set of functions. Each expression is parsed and evaluated through the project's DSL. The proposal contains 1–6 features.

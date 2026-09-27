@@ -11,10 +11,11 @@ const statusClass = (status) => ({completed: "ok", complete: "ok", ok: "ok", run
 const stopReasonText = (reason) => ({user_pause: "已暂停，进度已保存。", time_budget: "已达到运行时间预算。", llm_budget: "已达到模型调用预算。", model_budget: "已达到模型调用预算。", token_budget: "已达到 Token 预算。", call_budget: "已达到模型请求次数上限。", checkpoint: "已保存检查点，可以恢复继续研究。", no_valid_candidates: "没有候选通过验证，请查看拒绝原因与日志。", no_reviewed_candidates: "没有候选通过验证与模型复核。", research_complete: "研究已完成。", reviewer_stop: "复核建议结束研究。"}[reason] || reason);
 const modelLabel = (model) => ({rank: "因子排名", ridge: "岭回归", hist_gbdt: "梯度提升树"}[model] || model || "—");
 const reviewLabel = (decision) => ({approve: "通过复核", revise: "建议修改", reject: "复核拒绝"}[decision] || decision || "未复核");
+const jevDecisionLabel = (decision) => ({approve: "通过", revise: "需修改", reject: "拒绝"}[decision] || decision || "未裁决");
 const actionLabel = (action) => ({explore: "探索", refine: "优化", combine: "组合", crossover: "交叉", model_switch: "模型切换", mutate: "变异", revise: "修订", exploit: "改进", seed: "初始提案"}[action] || action || "未记录");
 const trialMetrics = (trial) => trial.development?.metrics || trial.metrics || {};
 const trialFeatures = (trial) => Array.isArray(trial.features) && trial.features.length ? trial.features.map((feature) => typeof feature === "string" ? feature : feature.expression || feature.name || "—") : [trial.expression || "—"];
-const trialUsages = (trial) => [["提案", trial.proposer_usage || trial.llm_usage], ["复核", trial.reviewer_usage]].filter(([, usage]) => usage && typeof usage === "object");
+const trialUsages = (trial) => [["提案", trial.proposer_usage || trial.llm_usage], ["复核", trial.reviewer_usage], ["Jev 裁决", trial.jev_usage]].filter(([, usage]) => usage && typeof usage === "object");
 const technicalIntegrityText = /sha-?256|checksum|fingerprint|文件校验|源码指纹|数据指纹/i;
 function userMessage(message) {
   const text = String(message);
@@ -134,7 +135,7 @@ function renderReport(report) {
   $("run-subtitle").textContent = report.config?.direction || "研究引擎正在准备任务与数据。";
   if (report.config?.mode) {
     const usages = (Array.isArray(report.trials) ? report.trials : []).flatMap((trial) => trialUsages(trial).map(([, usage]) => usage));
-    const providers = [...new Set(usages.map((usage) => usage.provider === "codex_cli" ? "本机 Codex" : "API 模型"))];
+    const providers = [...new Set(usages.map((usage) => usage.provider === "codex_cli" ? "本机 Codex" : usage.provider === "typesafe_jev" ? "Jev API" : "API 模型"))];
     const modeName = report.config.mode === "agent" ? "自主研究" : report.config.mode === "local" ? "历史本地搜索" : "历史 LLM 辅助";
     const execution = `本次：${modeName}${usages.length ? ` · ${providers.join(" / ")} · ${usages.length} 次模型返回` : report.config.mode !== "local" ? " · 尚无模型返回" : ""}`;
     $("run-subtitle").append(element("span", "run-provider-note", execution));
@@ -150,8 +151,8 @@ function renderReport(report) {
   $("pause-run").hidden = !["running", "queued"].includes(report.status) || report.active === false || Boolean(report.externally_active);
   $("pause-run").disabled = Boolean(report.pause_requested);
   $("pause-run").textContent = report.pause_requested ? "等待暂停…" : "暂停";
-  const stage = report.research?.stage ? ({propose: 1, evaluate: 2, review: 3, select: 4, complete: 4}[report.research.stage] || 0) : hasHoldout ? 4 : report.selected ? 3 : completed > 0 ? 2 : report.status === "running" ? 1 : 0;
-  const stages = report.config?.mode === "agent" ? ["01 模型提案", "02 训练与验证", "03 模型复核", "04 留出检验"] : ["01 提案", "02 因果检查", "03 滚动验证", "04 留出检验"];
+  const stage = report.research?.stage ? ({propose: 1, evaluate: 2, review: 3, jev_gate: 3, select: 4, complete: 4}[report.research.stage] || 0) : hasHoldout ? 4 : report.selected ? 3 : completed > 0 ? 2 : report.status === "running" ? 1 : 0;
+  const stages = report.config?.mode === "agent" ? ["01 模型提案", "02 训练与验证", report.research?.stage === "jev_gate" ? "03 Jev 决策复核" : "03 模型复核", "04 留出检验"] : ["01 提案", "02 因果检查", "03 滚动验证", "04 留出检验"];
   [...$("stage-track").children].forEach((node, index) => {node.classList.toggle("active", index < stage); node.textContent = stages[index];});
   if (source.kind === "synthetic" || source.kind === "demo" || report.config?.dataset === "demo") $("source-label").append(element("span", "status rejected inline-badge", "合成数据"));
   renderWarnings("run-warnings", report.warnings, report.error || (report.stop_reason && report.stop_reason !== "trial_budget" ? stopReasonText(report.stop_reason) : null));
@@ -257,6 +258,7 @@ function renderTrials(report) {
     if (features.length > 2) expression.append(element("small", "", `共 ${features.length} 个特征，详情中查看`));
     const status = element("td"); status.append(element("span", `status ${statusClass(trial.status)}`, statusText(trial.status)));
     if (trial.review || report.config?.mode === "agent") status.append(element("small", "review-state", reviewLabel(trial.review?.decision)));
+    if (trial.jev_gate) status.append(element("small", "review-state", `Jev：${jevDecisionLabel(trial.jev_gate.decision)}`));
     row.append(title, expression, element("td", "", number(trial.score ?? trial.development?.score, 3)), element("td", "", number(trialMetrics(trial).sharpe)), element("td", "", modelLabel(trial.model || (report.config?.mode === "agent" ? null : "rank"))), status);
     const select = () => {state.candidateId = trial.id; renderTrials(report); renderCandidate(report);};
     row.addEventListener("click", select);
@@ -284,7 +286,7 @@ function renderCandidate(report) {
   container.append(metadata);
   for (const [role, usage] of trialUsages(selected)) {
     const details = element("div", "detail-row");
-    details.append(element("span", "", `${role} · ${usage.provider === "codex_cli" || selected.origin === "codex_cli" ? "本机 Codex" : "API 模型"}`));
+    details.append(element("span", "", `${role} · ${role === "Jev 裁决" ? "Jev API" : usage.provider === "codex_cli" || selected.origin === "codex_cli" ? "本机 Codex" : "API 模型"}`));
     details.append(element("span", "", `模型：${usage.model || "—"}`));
     details.append(element("span", "", `Token：${numeric(usage.reported_total_tokens) ? number(usage.reported_total_tokens, 0) : "未报告"}`));
     details.append(element("span", "", `用时：${numeric(usage.seconds) ? `${number(usage.seconds, 1)} s` : "未报告"}`));
@@ -294,7 +296,7 @@ function renderCandidate(report) {
   if (Array.isArray(folds) && folds.length) {
     container.append(element("p", "", folds.map((fold, index) => `窗口 ${index + 1}：夏普 ${number(fold.metrics?.sharpe ?? fold.sharpe)}`).join(" · ")));
   }
-  if (report.config?.mode === "agent" || selected.review || selected.training_audit) renderTrialTrajectory(container, selected, report);
+  if (report.config?.mode === "agent" || selected.review || selected.jev_gate || selected.training_audit) renderTrialTrajectory(container, selected, report);
   if (selected.reason) container.append(element("div", "notice", selected.reason));
   if (report.selected?.id === selected.id) container.append(element("p", "", "★ 最终候选，由开发期验证结果选定。"));
 }
@@ -340,6 +342,7 @@ function renderTrialTrajectory(container, trial, report) {
     const risks = element("ul", "review-risks"); review.risks.forEach((risk) => risks.append(element("li", "", typeof risk === "string" ? risk : JSON.stringify(risk)))); trajectory.append(risks);
   }
   if (review.suggested_action) trajectory.append(element("p", "", `下一步：${actionLabel(review.suggested_action)}`));
+  renderJevGate(trajectory, trial.jev_gate);
   const audit = trial.training_audit || trial.development?.training_audit;
   if (audit && typeof audit === "object") {
     trajectory.append(element("h4", "", "训练记录"));
@@ -363,6 +366,29 @@ function renderTrialTrajectory(container, trial, report) {
     const details = element("details", "training-audit"); details.append(element("summary", "", "查看训练记录详情"), element("pre", "", JSON.stringify(audit, null, 2))); trajectory.append(details);
   }
   container.append(trajectory);
+}
+
+function renderJevGate(container, gate) {
+  if (!gate || typeof gate !== "object") return;
+  const section = element("section", "jev-gate");
+  const heading = element("div", "review-heading");
+  heading.append(element("h4", "", "Jev 决策复核"), element("span", `status ${gate.decision === "approve" ? "ok" : gate.decision === "reject" ? "failed" : gate.decision === "revise" ? "rejected" : "neutral"}`, jevDecisionLabel(gate.decision)));
+  section.append(heading);
+  const confidence = element("div", "detail-row");
+  confidence.append(element("span", "", `置信度：${percent(gate.confidence, 1)}`), element("span", "", `通过阈值：${percent(gate.threshold, 1)}`));
+  section.append(confidence);
+  if (gate.summary) section.append(element("p", "", gate.summary));
+  const probabilities = element("div", "detail-row jev-probabilities");
+  ["approve", "revise", "reject"].forEach((decision) => probabilities.append(element("span", "", `${jevDecisionLabel(decision)}概率：${percent(gate.probabilities?.[decision], 1)}`)));
+  section.append(probabilities);
+  const checks = element("dl", "jev-checks");
+  [["hypothesis_alignment", "假设一致性"], ["cost_support", "成本后支持"], ["fold_consistency", "滚动窗口一致性"], ["evidence_sufficiency", "证据充分性"]].forEach(([key, label]) => {
+    const value = gate.checks?.[key];
+    const result = numeric(value) ? `${percent(value, 1)}${numeric(gate.threshold) ? value >= gate.threshold ? " · 达标" : " · 低于阈值" : ""}` : "未报告";
+    checks.append(element("dt", "", label), element("dd", "", result));
+  });
+  section.append(checks);
+  container.append(section);
 }
 
 function renderEvents(events) {
@@ -404,9 +430,16 @@ function renderDatasetNote() {
 
 function renderModeNote() {
   const isCodex = state.settings?.provider === "codex_cli";
-  $("mode-note").textContent = !state.llmConfigured ? "请先在「设置」中配置模型连接。" : isCodex ? "本机 Codex · 提案与复核；每次请求预留 65,536 Token。" : "API 模型 · 提案与复核。";
+  const jevEnabled = Boolean(state.settings?.jev_enabled), jevMissing = jevEnabled && !state.settings?.jev_configured;
+  let note = !state.llmConfigured ? "请先在「设置」中配置模型连接。" : isCodex ? "本机 Codex · 提案与复核；每次请求预留 65,536 Token。" : "API 模型 · 提案与复核。";
+  if (jevMissing) note += " Jev 已启用但连接配置不完整，请先保存 Jev 地址、模型和密钥后开始研究。";
+  else if (jevEnabled) {
+    const calls = Number($("max-llm-calls").value), trials = Number($("trials").value);
+    note += ` 已启用 Jev 决策复核，共享请求与 Token 预算；按每候选 3 次请求计算，当前请求预算最多完成 ${Math.max(0, Math.min(trials, Math.floor(calls / 3)))} 个完整候选。`;
+  }
+  $("mode-note").textContent = note;
   const dataset = state.datasets.find((item) => item.id === $("dataset").value);
-  $("start-run").disabled = !state.llmConfigured || !dataset || dataset.rows < 468 || state.submitting || Boolean(state.importingDataset);
+  $("start-run").disabled = !state.llmConfigured || jevMissing || !dataset || dataset.rows < 468 || state.submitting || Boolean(state.importingDataset);
 }
 
 function renderDatasets(preferredId) {
@@ -460,6 +493,7 @@ async function submitRun(event) {
   if (!dataset) {showError("请先导入并选择 CSV 数据集。"); return;}
   if (dataset.rows < 468) {showError("自动研究至少需要 468 个共同交易日；当前数据可用于独立回测。"); return;}
   if (!state.llmConfigured) {showError("请先在「设置」中配置模型连接。"); return;}
+  if (state.settings?.jev_enabled && !state.settings?.jev_configured) {showError("Jev 已启用但连接配置不完整，请先在「设置」中保存 Jev 地址、模型和密钥。"); return;}
   const config = {direction: String(form.get("direction") || "").trim(), mode: "agent", dataset: form.get("dataset")};
   ["trials", "seed", "cost_bps", "top_k", "rebalance_every", "max_seconds", "max_llm_calls", "max_llm_tokens"].forEach((key) => {config[key] = Number(form.get(key));});
   config.constraints = {required_window: form.get("required_window") ? Number(form.get("required_window")) : null, forbidden_fields: form.getAll("forbidden_fields"), max_turnover: form.get("max_turnover") !== "" ? Number(form.get("max_turnover")) / 100 : null};
@@ -833,6 +867,21 @@ function renderProviderFields() {
   }
 }
 
+function renderJevFields() {
+  const enabled = $("settings-jev-enabled").checked;
+  $("settings-jev-fields").hidden = !enabled;
+  $("settings-jev-fields").querySelectorAll("input").forEach((input) => {input.disabled = !enabled;});
+  ["settings-jev-url", "settings-jev-model", "settings-jev-confidence"].forEach((id) => {$(id).required = enabled;});
+  $("settings-jev-key").disabled = !enabled || $("settings-jev-clear-key").checked;
+  const confidence = Number($("settings-jev-confidence").value);
+  $("settings-jev-confidence").setCustomValidity(enabled && confidence <= 0.5 ? "最低通过置信度必须大于 0.5。" : "");
+  const configured = Boolean(state.settings?.jev_configured), dirty = Boolean(state.settingsDirty);
+  $("settings-jev-test").disabled = !state.settings?.jev_enabled || !configured || dirty || Boolean(state.jevTesting);
+  $("settings-jev-status").textContent = dirty ? "待保存" : !enabled ? "未启用" : configured ? "已配置" : "待配置";
+  $("settings-jev-status").className = `status ${!dirty && enabled && configured ? "ok" : "neutral"}`;
+  $("settings-jev-note").textContent = dirty ? "配置已修改，请统一保存后再测试。" : !enabled ? "Jev 未启用，研究使用原有提案与复核模型。" : configured ? "Jev 配置已保存，点击测试可检查连接。" : "Jev 已启用但配置不完整；请保存地址、模型和密钥后开始研究。";
+}
+
 function applySettings(settings) {
   state.settings = settings;
   state.settingsDirty = false;
@@ -846,11 +895,19 @@ function applySettings(settings) {
   $("settings-key-status").textContent = settings.api_key_set ? "已保存" : "未设置";
   $("settings-token-field").value = settings.token_field || "max_completion_tokens";
   $("settings-temperature").value = numeric(settings.temperature) ? settings.temperature : "";
+  $("settings-jev-enabled").checked = Boolean(settings.jev_enabled);
+  $("settings-jev-url").value = settings.jev_base_url || "https://api.typesafe.ai/v1";
+  $("settings-jev-model").value = settings.jev_model || "jev-1.13.0";
+  $("settings-jev-confidence").value = numeric(settings.jev_min_confidence) ? settings.jev_min_confidence : 0.7;
+  $("settings-jev-key").value = ""; $("settings-jev-clear-key").checked = false;
+  $("settings-jev-key-status").textContent = settings.jev_api_key_set ? "已保存" : "未设置";
+  $("settings-jev-message").textContent = ""; $("settings-jev-message").hidden = true;
   $("settings-status").textContent = settings.provider === "codex_cli" ? settings.configured ? "已就绪" : settings.codex?.available ? "待登录" : "未检测到" : settings.configured ? "已配置" : "待配置";
   $("settings-status").className = `status ${settings.configured ? "ok" : "neutral"}`;
   $("settings-source").textContent = settings.source === "environment" ? "当前使用环境变量配置" : "当前使用本地保存的配置";
   $("settings-test").disabled = !settings.configured;
   renderProviderFields();
+  renderJevFields();
 }
 
 async function loadSettings() {
@@ -863,6 +920,7 @@ async function saveSettings(event) {
   const form = new FormData($("settings-form"));
   const provider = form.get("provider");
   const payload = provider === "codex_cli" ? {provider, codex_model: String(form.get("codex_model") || "").trim()} : {provider, base_url: String(form.get("base_url") || "").trim(), model: String(form.get("model") || "").trim(), api_key: String(form.get("api_key") || ""), clear_api_key: $("settings-clear-key").checked, token_field: form.get("token_field"), temperature: form.get("temperature") === "" ? null : Number(form.get("temperature"))};
+  Object.assign(payload, {jev_enabled: $("settings-jev-enabled").checked, jev_base_url: $("settings-jev-url").value.trim(), jev_model: $("settings-jev-model").value.trim(), jev_min_confidence: Number($("settings-jev-confidence").value), jev_api_key: $("settings-jev-clear-key").checked ? "" : $("settings-jev-key").value, clear_jev_api_key: $("settings-jev-clear-key").checked});
   $("settings-save").disabled = true;
   try {applySettings(await api("/api/settings", {method: "POST", body: JSON.stringify(payload)})); settingsMessage("配置已保存。");}
   catch (error) {settingsMessage(`保存失败：${error.message}`, true);}
@@ -882,8 +940,27 @@ async function testSettings() {
   finally {$("settings-test").disabled = !state.settings?.configured || Boolean(state.settingsDirty); $("settings-test").textContent = "测试连接";}
 }
 
+async function testJevSettings() {
+  if (!state.settings?.jev_enabled || !state.settings?.jev_configured || state.settingsDirty || state.jevTesting) return;
+  state.jevTesting = true;
+  $("settings-jev-test").disabled = true; $("settings-jev-test").textContent = "正在测试…";
+  const message = $("settings-jev-message");
+  message.hidden = false; message.className = "field-note"; message.textContent = "正在向已保存的 Jev 连接发送一次测试请求…";
+  try {
+    const result = await api("/api/settings/jev/test", {method: "POST", body: "{}", timeoutMs: 20000});
+    message.textContent = `${result.message || (result.ok ? "Jev 连接成功" : "Jev 连接失败")}${numeric(result.latency_ms) ? ` · ${number(result.latency_ms, 0)} ms` : ""}`;
+    message.className = `field-note ${result.ok ? "" : "negative"}`;
+  } catch (error) {message.textContent = `Jev 连接测试失败：${error.message}`; message.className = "field-note negative";}
+  finally {
+    state.jevTesting = false;
+    $("settings-jev-test").disabled = !state.settings?.jev_enabled || !state.settings?.jev_configured || Boolean(state.settingsDirty);
+    $("settings-jev-test").textContent = "测试 Jev 连接";
+  }
+}
+
 function initializeProduct() {
   ["max-llm-tokens", "max-llm-calls"].forEach((id) => $(id).addEventListener("input", () => {$(id).dataset.userEdited = "true"; renderModeNote();}));
+  $("trials").addEventListener("input", renderModeNote);
   let resizeTimer;
   window.addEventListener("resize", () => {
     clearTimeout(resizeTimer);
@@ -905,10 +982,13 @@ function initializeProduct() {
   $("backtest-dataset").addEventListener("change", renderBacktestDataset);
   $("backtest-history").addEventListener("change", () => loadBacktest($("backtest-history").value).catch((error) => showError(`读取回测失败：${error.message}`)));
   $("settings-form").addEventListener("submit", saveSettings);
-  $("settings-form").addEventListener("input", () => {state.settingsDirty = true; $("settings-test").disabled = true;});
+  $("settings-form").addEventListener("input", () => {state.settingsDirty = true; $("settings-test").disabled = true; $("settings-jev-message").hidden = true; renderJevFields();});
   $("settings-provider").addEventListener("change", () => {state.settingsDirty = true; renderProviderFields(); settingsMessage("提供方已切换，请保存配置后测试或开始研究。");});
   $("settings-refresh").addEventListener("click", () => loadSettings().catch((error) => settingsMessage(error.message, true)));
   $("settings-test").addEventListener("click", testSettings);
+  $("settings-jev-test").addEventListener("click", testJevSettings);
+  $("settings-jev-enabled").addEventListener("change", () => {state.settingsDirty = true; $("settings-test").disabled = true; renderJevFields();});
+  $("settings-jev-clear-key").addEventListener("change", () => {state.settingsDirty = true; $("settings-test").disabled = true; if ($("settings-jev-clear-key").checked) $("settings-jev-key").value = ""; renderJevFields();});
   $("settings-clear-key").addEventListener("change", () => {renderProviderFields(); if ($("settings-key").disabled) $("settings-key").value = "";});
   renderBacktest({});
 }

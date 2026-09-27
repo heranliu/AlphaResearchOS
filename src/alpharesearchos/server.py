@@ -377,7 +377,7 @@ def make_server(runs_root: Path, dataset_root: Path, port=8765):
                         if active:
                             return self.json({"error": "任务运行期间不能更改模型配置"}, 409)
                         return self.json(settings.update(body))
-                if path == "/api/settings/test":
+                if path in {"/api/settings/test", "/api/settings/jev/test"}:
                     if body:
                         raise ValueError("Save configuration before testing")
                     with mutex:
@@ -385,7 +385,8 @@ def make_server(runs_root: Path, dataset_root: Path, port=8765):
                             return self.json({"error": "请等待当前任务结束后测试连接"}, 409)
                         active["connection-test"] = {"kind": "connection", "pause": threading.Event()}
                     try:
-                        return self.json(settings.test_connection())
+                        probe = settings.test_jev_connection if path == "/api/settings/jev/test" else settings.test_connection
+                        return self.json(probe())
                     finally:
                         with mutex:
                             active.pop("connection-test", None)

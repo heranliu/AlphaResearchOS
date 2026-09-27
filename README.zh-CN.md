@@ -2,23 +2,23 @@
 
 <h1>AlphaResearchOS</h1>
 <p><strong>自主量化研究工作台</strong></p>
-<p>从市场数据出发，提出研究假设、训练预测模型、评估交易策略。</p>
+<p>从市场数据出发，提出研究假设、训练预测模型、形成可审计的策略，支持可选 Jev 判断。</p>
 
 <p><a href="README.md">English</a> &nbsp;|&nbsp; <strong>简体中文</strong></p>
 
 <p>
   <img src="https://img.shields.io/badge/Python-3.11%E2%80%933.13-3776AB?logo=python&logoColor=white" alt="Python 3.11–3.13">
-  <img src="https://img.shields.io/badge/Models-Codex%20%2B%20API-16877B" alt="Codex 与兼容 API">
+  <img src="https://img.shields.io/badge/Models-Codex%20%2B%20API%20%2B%20Jev-16877B" alt="Codex、兼容 API 与可选 Jev">
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-64748B" alt="MIT License"></a>
 </p>
 
-<p><a href="#快速开始">快速开始</a> · <a href="#行业-etf-表现">行业 ETF 表现</a> · <a href="docs/USER_GUIDE.md">使用指南</a></p>
+<p><a href="#快速开始">快速开始</a> · <a href="#行业-etf-表现">行业 ETF 表现</a> · <a href="docs/JEV.md">Jev 复核</a> · <a href="docs/USER_GUIDE.md">使用指南</a></p>
 
 </div>
 
 AlphaResearchOS 将量化研究流程整合进本地工作台。导入标准 OHLCV CSV，连接 Codex 或兼容模型 API，输入希望研究的策略方向，即可开始实验。
 
-**研究假设 → 特征与模型 → 开发评价 → 独立会话复核 → 迭代 → 留出评价**
+**研究假设 → 特征与模型 → 开发评价 → 独立复核 → 可选 Jev 检查 → 迭代 → 留出评价**
 
 ![AlphaResearchOS 研究工作台](docs/assets/workbench.png)
 
@@ -29,6 +29,8 @@ AlphaResearchOS 将量化研究流程整合进本地工作台。导入标准 OHL
 | 提出假设并生成 1–6 个特征表达式 | 使用新的模型会话复核每个有效候选 | 对照等权、20 日和 60 日动量基线 |
 | 比较排名组合、岭回归与直方图梯度提升 | 查看父轨迹、研究理由和后续实验 | 分析净值、回撤、换手与成本敏感性 |
 | 开发期经验与 UCB 父节点选择指导搜索 | 设置请求、候选、时间和 token 准入预算 | 管理因子库，导出完整研究报告 |
+
+**可选 Jev 复核。** 在独立模型复核之后，增加带有逐项概率和决策置信度的结构化判断。检查只接收开发期证据，计入原有研究预算，失败或低置信度的候选不能入选。默认关闭。[工作原理 →](docs/JEV.md)
 
 ## 快速开始
 
@@ -61,29 +63,33 @@ date,symbol,open,high,low,close,volume
 
 数据覆盖 **2010-01-04 至 2026-09-17**。训练和候选选择使用 **2023-05-08** 及之前的历史；下表与图表对应其后的 841 日留出期。所有策略每 5 个交易日调仓，AlphaResearchOS 与动量基线持有排名前 3 只资产，等权基线持有全部 9 只。
 
-![行业 ETF 策略表现对比](docs/assets/benchmark-performance.png)
-
-| 策略 | 累计收益 | CAGR | 夏普 | 最大回撤 |
-| --- | ---: | ---: | ---: | ---: |
-| **AlphaResearchOS · 岭回归** | **117.53%** | **26.22%** | **1.5608** | -16.21% |
-| 全资产等权 | 63.22% | 15.81% | 1.2662 | **-15.61%** |
-| 20 日动量 | 58.22% | 14.74% | 1.0615 | -21.21% |
-| 60 日动量 | 65.63% | 16.32% | 1.1823 | -18.14% |
-
-策略累计收益相对等权高 **54.32 个百分点**，相对 20 日、60 日动量分别高 **59.31**、**51.90 个百分点**。最大回撤比等权深 0.60 个百分点。
+这是 **接入 Jev 之前的历史基准**，衡量原有研究流程；尚未实测 Jev 的收益增益，也未进行真实服务消融对照。
 
 ![行业 ETF 留出期净值曲线](docs/assets/benchmark-equity.png)
 
+| 策略 | 累计收益 | CAGR | 夏普 | 最大回撤 | 年化波动 |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| **AlphaResearchOS · 岭回归** | **117.53%** | **26.22%** | **1.5608** | -16.21% | 15.71% |
+| 全资产等权 | 63.22% | 15.81% | 1.2662 | **-15.61%** | **12.18%** |
+| 20 日动量 | 58.22% | 14.74% | 1.0615 | -21.21% | 13.86% |
+| 60 日动量 | 65.63% | 16.32% | 1.1823 | -18.14% | 13.57% |
+
+策略累计收益相对等权高 **54.32 个百分点**，相对 20 日、60 日动量分别高 **59.31**、**51.90 个百分点**。夏普高于三条基线，同时年化波动也更高；最大回撤比等权深 0.60 个百分点。
+
+![收益与波动、完整回撤、分年收益及逐月配对基线比较](docs/assets/benchmark-diagnostics.png)
+
+在 **39 个完整月份**中，策略有 **28 个月（71.8%）**跑赢等权，**22 个月（56.4%）**跑赢 20 日动量，**23 个月（59.0%）**跑赢 60 日动量。2024、2025 及 2026 年截至 9 月 17 日均领先三条基线，但在 2023 年局部窗口落后。图中保留了全部年度和完整回撤路径。
+
 <details>
-<summary><strong>交易成本与换手</strong></summary>
+<summary><strong>执行维度：交易成本与换手</strong></summary>
 
-在 **单边 40 bps 成本**下，策略累计收益为 **92.15%**，同期等权为 **61.15%**。在基准配置下，其日均换手率相对 20 日动量低 **62.50%**，相对 60 日动量低 **37.39%**。
+在 **单边 40 bps 成本**下，策略累计收益为 **92.15%**，相同成本下的等权为 **61.15%**。在 10 bps 基准配置下，策略日均换手率为 **4.92%**：相对 20 日动量低 **62.50%**，相对 60 日动量低 **37.39%**，但高于等权的 **0.51%**。
 
-![行业 ETF 交易成本敏感性](docs/assets/benchmark-costs.png)
+![相同成本下的收益与日均组合换手](docs/assets/benchmark-frictions.png)
 
 </details>
 
-[策略、开发折与成本分析](docs/BENCHMARK.md) · [基准数据](benchmarks/sector-etf/results.json)
+[方法、开发结果与图表复现](docs/BENCHMARK.md) · [原始基准证据](benchmarks/sector-etf/results.json) · [派生诊断数据](benchmarks/sector-etf/analysis_metrics.json)
 
 ## 研究如何执行
 

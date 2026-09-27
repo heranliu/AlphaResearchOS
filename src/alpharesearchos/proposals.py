@@ -72,8 +72,9 @@ def local_proposal(index: int, seed: int, history: list[dict], direction: str) -
             "expression": expression, "parents": list(dict.fromkeys(parent_ids)), "origin": "local_adaptive"}
 
 
-def environment_settings():
-    return {"provider": os.environ.get("ALPHAOS_LLM_PROVIDER", "openai_compatible"),
+def environment_settings(*, raw_jev=False):
+    from .model_settings import jev_environment_settings
+    return {**jev_environment_settings(raw=raw_jev), "provider": os.environ.get("ALPHAOS_LLM_PROVIDER", "openai_compatible"),
             "codex_model": os.environ.get("ALPHAOS_CODEX_MODEL", ""),
             "base_url": os.environ.get("ALPHAOS_LLM_BASE_URL", "https://api.openai.com/v1").rstrip("/"),
             "model": os.environ.get("ALPHAOS_LLM_MODEL", ""),
