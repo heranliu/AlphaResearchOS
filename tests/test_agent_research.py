@@ -101,6 +101,119 @@ def config(**overrides):
     return ResearchConfig(**(values | overrides))
 
 
+@pytest.fixture
+def jev(monkeypatch, model):
+    from alpharesearchos import jev_client
+    calls = []
+    responses = {"decision": "approve", "error": None, "model": "jev-1.13.0"}
+
+    def gate(context, *, settings, timeout):
+        assert timeout > 0 and settings["jev_api_key"] == "JEV_SECRET_CANARY"
+        calls.append(copy.deepcopy(context))
+        if responses["error"]:
+            raise responses["error"]
+        decision = responses["decision"]
+        return {"decision": decision, "confidence": .9, "threshold": .7,
+                "probabilities": {key: .9 if key == decision else .05 for key in ["approve", "revise", "reject"]},
+                "checks": {key: .85 for key in ["hypothesis_alignment", "cost_support", "fold_consistency", "evidence_sufficiency"]},
+                "summary": "Recorded development-evidence judgment"}, {
+                    "provider": "typesafe_jev", "model": responses["model"], "reported_total_tokens": 23}
+
+    monkeypatch.setattr(jev_client, "review_gate", gate)
+    monkeypatch.setattr(agent_research, "JEV_TOKEN_RESERVATION", 100)
+    settings = {**proposals.llm_settings(), "jev_enabled": True, "jev_api_key": "JEV_SECRET_CANARY"}
+    with proposals.provider_context(settings):
+        yield calls, responses
+
+
+def test_jev_additional_gate_is_counted_exported_and_has_no_holdout(tmp_path, market, model, jev):
+    directory, report = run(tmp_path, market, settings=config(trials=1))
+    assert report["status"] == "completed"
+    assert len(model.calls) == 2 and len(jev[0]) == 1
+    assert report["_state"]["llm_calls"] == 3 and report["_state"]["llm_reserved_tokens"] == 300
+    assert report["research"]["budget"]["jev_calls"] == 1
+    assert report["research"]["jev"]["actual_model"] == "jev-1.13.0"
+    assert report["selected"]["jev_gate"]["decision"] == "approve"
+    assert jev[0][0]["execution"]["cost_bps"] == 10
+    assert jev[0][0]["review"]["decision"] == "approve"
+    sent = json.dumps(jev[0])
+    for canary in ["holdout", "JEV_SECRET_CANARY", "PROVIDER_SECRET_CANARY", str(tmp_path)]:
+        assert canary not in sent
+    for name in ["report.json", "trials.csv", "report.html", "report.md", "selected_candidate.json"]:
+        body = (directory / name).read_text()
+        assert "JEV_SECRET_CANARY" not in body and "PROVIDER_SECRET_CANARY" not in body
+        assert "jev" in body.lower()
+
+
+@pytest.mark.parametrize("decision", ["revise", "reject"])
+def test_jev_veto_excludes_llm_approved_candidate(tmp_path, market, model, jev, decision):
+    jev[1]["decision"] = decision
+    _, report = run(tmp_path, market, settings=config(trials=1))
+    trial = report["trials"][0]
+    assert trial["review"]["decision"] == "approve" and trial["status"] == "rejected"
+    assert trial["jev_gate"]["decision"] == decision
+    assert report["selected"] is None and report["holdout"] is None
+
+
+def test_reviewer_rejection_does_not_call_jev(tmp_path, market, model, jev):
+    model.decisions["rank"] = "reject"
+    _, report = run(tmp_path, market, settings=config(trials=1))
+    assert jev[0] == [] and report["_state"]["llm_calls"] == 2
+    assert report["selected"] is None
+
+
+@pytest.mark.parametrize("overrides", [{"max_llm_calls": 2}, {"max_llm_tokens": 299}])
+def test_jev_requires_budget_for_all_three_requests_before_proposal(tmp_path, market, model, jev, overrides):
+    _, report = run(tmp_path, market, settings=config(trials=1, **overrides))
+    assert report["stop_reason"] == "model_budget" and not report["trials"]
+    assert model.calls == [] and jev[0] == []
+
+
+def test_failed_jev_request_is_charged_without_fallback(tmp_path, market, model, jev):
+    jev[1]["error"] = RuntimeError("Jev connection failed")
+    _, report = run(tmp_path, market, settings=config(trials=1))
+    assert report["trials"][0]["status"] == "failed"
+    assert report["trials"][0]["jev_usage"]["status"] == "attempted"
+    assert report["selected"] is None and report["holdout"] is None
+    assert len(jev[0]) == 1 and report["_state"]["llm_calls"] == 3
+
+
+def test_interrupted_jev_request_is_never_replayed(tmp_path, market, model, jev):
+    directory = engine.create_run(tmp_path / "runs", config(trials=1), market)
+    jev[1]["error"] = KeyboardInterrupt()
+    with pytest.raises(KeyboardInterrupt):
+        agent_research.run_agent_research(directory)
+    assert read_json(directory / "report.json")["_state"]["pending"]["phase"] == "jev_gate"
+    jev[1]["error"] = None
+    report = engine.run_research(directory)
+    assert len(jev[0]) == 1 and report["_state"]["llm_calls"] == 3
+    assert report["selected"] is None
+
+
+@pytest.mark.parametrize("change", [{"jev_enabled": False}, {"jev_min_confidence": .8}, {"jev_model": "jev-1.14.0"}])
+def test_jev_configuration_frozen_at_creation(tmp_path, market, model, jev, change):
+    directory = engine.create_run(tmp_path / "runs", config(trials=1), market)
+    with proposals.provider_context({**proposals.llm_settings(), **change}):
+        with pytest.raises(ValueError, match="Jev configuration changed"):
+            engine.run_research(directory)
+    assert model.calls == [] and jev[0] == []
+
+
+def test_future_prices_cannot_change_jev_evidence_or_decision(tmp_path, market, model, jev):
+    _, first = run(tmp_path / "first", market, settings=config(trials=1))
+    changed = load_csv(market)
+    cut = first["_state"]["development_end"]
+    multipliers = np.exp(.003 * np.arange(1, len(changed["close"]) - cut + 1))[:, None]
+    for field in ("open", "high", "low", "close"):
+        changed[field].iloc[cut:] *= multipliers
+    altered_path = tmp_path / "altered.csv"
+    save_panel(changed, altered_path)
+    _, second = run(tmp_path / "second", altered_path, settings=config(trials=1))
+    assert jev[0][0] == jev[0][1]
+    assert first["selected"]["jev_gate"] == second["selected"]["jev_gate"]
+    assert first["holdout"]["metrics"]["total_return"] != second["holdout"]["metrics"]["total_return"]
+
+
 def run(tmp_path, market, *, settings=None, **kwargs):
     directory = engine.create_run(tmp_path / "runs", settings or config(), market)
     report = agent_research.run_agent_research(directory, memory_path=tmp_path / "memory.sqlite3", **kwargs)

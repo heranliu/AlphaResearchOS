@@ -44,6 +44,10 @@ def code_fingerprint():
 def create_run(root: Path, config: ResearchConfig, csv_path: Path | None = None, candidates=None):
     if config.mode in {"llm", "agent"} and not llm_configured():
         raise ValueError("LLM mode requires a configured API provider or an authenticated local Codex CLI")
+    if config.mode == "agent":
+        from .agent_research import jev_identity
+        from .proposals import llm_settings
+        gate_identity = jev_identity(llm_settings())
     panel = load_csv(csv_path) if csv_path else make_demo(seed=config.seed)
     if config.top_k > panel["close"].shape[1]:
         raise ValueError("top_k exceeds the number of assets")
@@ -87,6 +91,7 @@ def create_run(root: Path, config: ResearchConfig, csv_path: Path | None = None,
     if config.mode == "agent":
         import sklearn
         report["provenance"]["sklearn"] = sklearn.__version__
+        report["_state"]["jev_gate_config"] = gate_identity
     if source["kind"] == "synthetic":
         report["warnings"].append("合成数据用于验证工程流程，收益指标不代表真实市场表现。")
     else:
@@ -120,6 +125,10 @@ def _export(directory, report):
             row.update({"model": trial.get("model"), "action": trial.get("action"),
                         "review_decision": trial.get("review", {}).get("decision")})
             row.update({key: json.dumps(trial.get(key), ensure_ascii=False) for key in ["features", "model_params", "parents"]})
+            if trial.get("jev_gate") or trial.get("jev_usage"):
+                row.update({"jev_decision": trial.get("jev_gate", {}).get("decision"),
+                            "jev_gate": json.dumps(trial.get("jev_gate"), ensure_ascii=False),
+                            "jev_usage": json.dumps(trial.get("jev_usage"), ensure_ascii=False)})
         row.update({"dev_" + k: v for k, v in trial.get("metrics", {}).items() if not isinstance(v, (list, dict))})
         public_trials.append(row)
     pd.DataFrame(public_trials).to_csv(directory / "trials.csv", index=False)

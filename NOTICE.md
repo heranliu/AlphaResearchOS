@@ -14,3 +14,12 @@ handling, rolling windows, tied ranks, and numeric serialization. See the
 Python dependencies are distributed by their respective authors under their own
 licenses. Benchmark files contain calculated strategy results and evaluation
 settings; market data is obtained through the user's chosen data provider.
+
+The optional Jev client and benchmark diagnostic charts are independently
+implemented. API behavior follows [TypeSafe's documentation](https://docs.typesafe.ai/api).
+Research-gate design was informed by [QuantDinger](https://github.com/OpenByteInc/QuantDinger)
+and [Jev-Trades](https://github.com/zadescoxp/Jev-Trades); chart organization was
+informed by [QuantStats](https://github.com/ranaroussi/quantstats) and
+[pyfolio](https://github.com/quantopian/pyfolio). No source code, prompts, branding
+or chart assets from those projects are incorporated. Jev is a separately
+operated hosted model; this repository does not distribute its weights.

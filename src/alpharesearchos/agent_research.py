@@ -22,10 +22,23 @@ from .config import ResearchConfig
 from .data import file_hash, load_csv
 from .factorminer_adapter import differential_check
 from .factors import causality_check, evaluate_expression
+from .model_settings import validate_jev_settings
 from .predictive import strategy_scores, validate_strategy
 from .proposals import llm_settings, provider_context
 from .research_memory import GraphMemory, choose_parents
 from .store import read_json, run_lock
+
+# Conservative admission reservation for the client's bounded 24 KB payload.
+# Reported usage above this reservation is still charged; it is not a price.
+JEV_TOKEN_RESERVATION = 32768
+
+
+def jev_identity(settings):
+    config = validate_jev_settings(settings, require_key=settings.get("jev_enabled", False))
+    if not config["jev_enabled"]:
+        return {"enabled": False}
+    return {"enabled": True, "base_url": config["jev_base_url"], "model": config["jev_model"],
+            "min_confidence": config["jev_min_confidence"]}
 
 
 def enforce_constraints(strategy, constraints, metrics=None):
@@ -111,6 +124,7 @@ def run_agent_research(directory: Path, *, stop_after=None, should_pause=None, m
         config = ResearchConfig(**report["config"])
         state = report["_state"]
         provider = llm_settings()
+        provider.update(validate_jev_settings(provider, require_key=provider.get("jev_enabled", False)))
         if provider.get("provider") == "codex_cli":
             from .codex_provider import codex_status
             detected = codex_status()
@@ -121,6 +135,11 @@ def run_agent_research(directory: Path, *, stop_after=None, should_pause=None, m
         if state.get("agent_provider", identity) != identity:
             raise ValueError("Model provider changed since experiment creation; restore it or create a new experiment")
         state["agent_provider"] = identity
+        gate_identity = jev_identity(provider)
+        if state.get("jev_gate_config", gate_identity) != gate_identity:
+            raise ValueError("Jev configuration changed since experiment creation; restore it or create a new experiment")
+        state["jev_gate_config"] = gate_identity
+        state.setdefault("jev_calls", 0)
         panel = load_csv(directory / "snapshot.csv")
         dev = {field: values.iloc[:state["development_end"]].copy() for field, values in panel.items()}
         bt = BacktestConfig(config.cost_bps, config.top_k, config.rebalance_every)
@@ -132,7 +151,7 @@ def run_agent_research(directory: Path, *, stop_after=None, should_pause=None, m
         def checkpoint():
             report["research"]["graph"] = _graph(report)
             report["research"]["model_counts"] = {model: sum(trial.get("model") == model for trial in report["trials"]) for model in ["rank", "ridge", "hist_gbdt"]}
-            report["research"]["budget"] = {key: state[key] for key in ["llm_calls", "llm_reserved_tokens"]}
+            report["research"]["budget"] = {key: state[key] for key in ["llm_calls", "llm_reserved_tokens", "jev_calls"]}
             _checkpoint(directory, report, clock_start, prior)
 
         def elapsed():
@@ -141,31 +160,49 @@ def run_agent_research(directory: Path, *, stop_after=None, should_pause=None, m
         def paid_call(role, context):
             if elapsed() >= config.max_seconds:
                 raise ValueError("Time budget exhausted before model request")
-            reserve = research_client.reservation()
+            reserve = JEV_TOKEN_RESERVATION if role == "jev_gate" else research_client.reservation()
             if state["llm_calls"] >= config.max_llm_calls or state["llm_reserved_tokens"] + reserve > config.max_llm_tokens:
                 raise ValueError("Model budget exhausted before review")
             state["llm_calls"] += 1
             state["llm_reserved_tokens"] += reserve
+            if role == "jev_gate":
+                state["jev_calls"] += 1
+                state["pending"]["trial"]["jev_usage"] = {
+                    "provider": "typesafe_jev", "model": gate_identity["model"], "status": "attempted"}
             state["pending"]["phase"] = role
             report["research"]["stage"] = role
             checkpoint()
-            function = research_client.propose if role == "propose" else research_client.review
-            with provider_context(provider):
-                value, usage = function(context, timeout=config.max_seconds - elapsed())
+            if role == "jev_gate":
+                from .jev_client import review_gate
+                value, usage = review_gate(context, settings=provider, timeout=config.max_seconds - elapsed())
+            else:
+                function = research_client.propose if role == "propose" else research_client.review
+                with provider_context(provider):
+                    value, usage = function(context, timeout=config.max_seconds - elapsed())
             used = usage.get("reported_total_tokens")
             if type(used) is int and used > reserve:
                 state["llm_reserved_tokens"] += used - reserve
+            if role == "jev_gate":
+                state["pending"]["trial"]["jev_usage"] = usage
+                # Aliases may change remotely between calls or across a resume.
+                # Do not combine decisions from different model versions.
+                actual_model = usage["model"]
+                if state.get("jev_actual_model", actual_model) != actual_model:
+                    raise ValueError("Jev response model changed during the experiment; create a new experiment")
+                state["jev_actual_model"] = actual_model
+                report["research"]["jev"]["actual_model"] = actual_model
             return value, usage
 
         if "research" not in report:
             scope_config = {key: report["config"][key] for key in ["cost_bps", "top_k", "rebalance_every", "folds", "warmup", "holdout_fraction", "constraints"]}
-            scope = hashlib.sha256(json.dumps({"data": report["source"]["sha256"], "protocol": scope_config,
+            scope = hashlib.sha256(json.dumps({"data": report["source"]["sha256"], "protocol": scope_config, "jev": gate_identity,
                                               "implementation": report["provenance"]["source_code_sha256"]}, sort_keys=True).encode()).hexdigest()
             state["memory_scope"] = scope
             state["memory_prior"] = memory.retrieve(scope, config.direction, limit=4, asof_date=report["split"]["development_end"])
             report["research"] = {"policy": "model_only", "stage": "propose", "graph": {"nodes": [], "edges": []},
                                    "memory": {"scope": scope, "retrieved": len(state["memory_prior"]), "stored": 0},
-                                   "constraints": config.constraints, "model_counts": {}, "provider": identity}
+                                   "constraints": config.constraints, "model_counts": {}, "provider": identity,
+                                   "jev": dict(gate_identity)}
             baseline = evaluate_expression("rank(ret(close, 20))", dev)
             report["research"]["development_baselines"] = {
                 "momentum20": evaluate_development(baseline, dev["close"], bt, state["folds"]),
@@ -196,7 +233,9 @@ def run_agent_research(directory: Path, *, stop_after=None, should_pause=None, m
                     report["stop_reason"] = "time_budget"
                     break
                 reserve = research_client.reservation()
-                if state["llm_calls"] + 2 > config.max_llm_calls or state["llm_reserved_tokens"] + 2 * reserve > config.max_llm_tokens:
+                calls_needed = 3 if gate_identity["enabled"] else 2
+                tokens_needed = 2 * reserve + (JEV_TOKEN_RESERVATION if gate_identity["enabled"] else 0)
+                if state["llm_calls"] + calls_needed > config.max_llm_calls or state["llm_reserved_tokens"] + tokens_needed > config.max_llm_tokens:
                     report["stop_reason"] = "model_budget"
                     break
                 if state["memory_prior"]:
@@ -266,14 +305,21 @@ def run_agent_research(directory: Path, *, stop_after=None, should_pause=None, m
                     enforce_constraints(trial, config.constraints, trial["metrics"])
                     signal_cache[trial["id"]] = scores
                     trial["status"] = "evaluated"
-                    verdict, review_usage = paid_call("review", {"direction": config.direction, "constraints": config.constraints,
+                    review_context = {"direction": config.direction, "constraints": config.constraints,
                                                                 "candidate": research_client.compact_trial(trial),
                                                                 "technical_audit": {"causal_features": True, "training": "Frozen before each development fold; only matured labels", "coverage": float(np.isfinite(signal_slice).mean())},
-                                                                "development_baselines": context["development_baselines"]})
+                                                                "execution": context["execution"],
+                                                                "development_baselines": context["development_baselines"]}
+                    verdict, review_usage = paid_call("review", review_context)
                     trial.update(review=verdict, reviewer_usage=review_usage)
                     trial["status"] = "ok" if verdict["decision"] == "approve" else "rejected"
                     if trial["status"] != "ok":
                         trial["reason"] = "Reviewer " + verdict["decision"] + ": " + verdict["critique"]
+                    elif gate_identity["enabled"]:
+                        gate, gate_usage = paid_call("jev_gate", {**review_context, "review": verdict})
+                        trial.update(jev_gate=gate, jev_usage=gate_usage)
+                        if gate["decision"] != "approve":
+                            trial.update(status="rejected", reason="Jev " + gate["decision"] + ": " + gate["summary"])
                 except (ValueError, SyntaxError) as exc:
                     trial.update(status="rejected", reason=str(exc)[:1500])
                 except Exception as exc:
@@ -293,7 +339,9 @@ def run_agent_research(directory: Path, *, stop_after=None, should_pause=None, m
                 report.update(status="paused", stop_reason="user_pause")
                 checkpoint()
                 return report
-            accepted = [trial for trial in report["trials"] if trial["status"] == "ok" and trial.get("review", {}).get("decision") == "approve"]
+            accepted = [trial for trial in report["trials"] if trial["status"] == "ok"
+                        and trial.get("review", {}).get("decision") == "approve"
+                        and (not gate_identity["enabled"] or trial.get("jev_gate", {}).get("decision") == "approve")]
             if not accepted:
                 report.update(status="failed", stop_reason=report.get("stop_reason") or "no_reviewed_candidates")
                 event(report, "没有通过独立复核的有效候选；没有调用本地搜索兜底", "warning")

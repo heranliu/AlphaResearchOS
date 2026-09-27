@@ -71,6 +71,34 @@ def test_settings_persist_without_leaking_key(web, monkeypatch):
     assert call(web, '/artifacts/../../.alphaos/settings.json')[0] in (400, 404)
 
 
+def test_jev_settings_and_explicit_probe_are_isolated(web, monkeypatch):
+    from alpharesearchos import jev_client
+    calls = []
+    def gate(context, *, settings, timeout):
+        calls.append(context)
+        assert settings['jev_api_key'] == 'PRIVATE_JEV_KEY'
+        return {'decision': 'revise'}, {'model': 'jev-1.13.0'}
+    monkeypatch.setattr(jev_client, 'review_gate', gate)
+    code, saved = call(web, '/api/settings', {'jev_api_key': 'PRIVATE_JEV_KEY'})
+    assert code == 200 and saved['jev_configured'] and not saved['jev_enabled']
+    assert 'PRIVATE_JEV_KEY' not in json.dumps(saved) and 'jev_api_key' not in saved
+    assert calls == []
+    assert call(web, '/api/settings/jev/test', {'jev_api_key': 'new'})[0] == 400
+    assert call(web, '/api/settings/jev/test', {}, {'Origin': 'https://evil.example'})[0] == 403
+    assert calls == []
+    code, result = call(web, '/api/settings/jev/test', {})
+    assert code == 200 and result['ok'] and len(calls) == 1
+    assert 'PRIVATE_JEV_KEY' not in json.dumps(result)
+
+
+def test_enabled_jev_requires_key_before_creating_agent_run(web):
+    call(web, '/api/settings', {'base_url': 'https://provider.example/v1', 'model': 'mock',
+                              'api_key': 'NOT_USED', 'jev_enabled': True, 'clear_jev_api_key': True})
+    code, result = call(web, '/api/runs', {'mode': 'agent', 'dataset': 'fixture.csv', 'trials': 1})
+    assert code == 400 and 'Jev' in result['error']
+    assert not list((web[1] / 'runs').glob('*/report.json'))
+
+
 def test_busy_job_pause_and_configuration_lock(web, monkeypatch):
     entered, release, finished = threading.Event(), threading.Event(), threading.Event()
     observed = {}
@@ -89,6 +117,7 @@ def test_busy_job_pause_and_configuration_lock(web, monkeypatch):
         assert len(list((web[1] / 'runs').iterdir())) == 1
         assert call(web, '/api/settings', {'model': 'changed'})[0] == 409
         assert call(web, '/api/settings/test', {})[0] == 409
+        assert call(web, '/api/settings/jev/test', {})[0] == 409
         code, paused = call(web, f"/api/runs/{first['id']}/pause", {})
         assert code == 200 and paused['status'] == 'pause_requested'
         report = call(web, f"/api/runs/{first['id']}")[1]

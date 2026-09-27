@@ -239,3 +239,76 @@ def test_unconfigured_probe_sends_no_request(tmp_path):
 
 def test_probe_never_follows_authorization_redirect():
     assert _NoRedirect().redirect_request(None, None, 302, "", {}, "https://evil.example") is None
+
+
+def test_jev_is_optional_and_its_secret_is_managed_independently(tmp_path, monkeypatch):
+    monkeypatch.delenv("ALPHAOS_JEV_API_KEY", raising=False)
+    monkeypatch.delenv("TYPESAFE_API_KEY", raising=False)
+    store = SettingsStore(tmp_path)
+    initial = store.update(provider())
+    assert initial["configured"] and not initial["jev_enabled"] and not initial["jev_configured"]
+    public = store.update({"jev_enabled": True, "jev_api_key": "JEV_PRIVATE_CANARY"})
+    assert public["jev_configured"] and public["jev_api_key_set"]
+    assert "jev_api_key" not in public and "JEV_PRIVATE_CANARY" not in json.dumps(public)
+    store.update({"jev_api_key": ""})
+    assert store.resolve()["jev_api_key"] == "JEV_PRIVATE_CANARY"
+    monkeypatch.setenv("TYPESAFE_API_KEY", "must-not-reappear")
+    public = store.update({"clear_jev_api_key": True})
+    assert not public["jev_configured"] and public["configured"]
+    assert store.resolve()["api_key"] == "secret-never-return"
+    assert store.resolve()["jev_api_key"] == ""
+    assert stat.S_IMODE(store.path.stat().st_mode) == 0o600
+
+
+@pytest.mark.parametrize("patch", [
+    {"jev_enabled": "false"}, {"jev_min_confidence": .5}, {"jev_min_confidence": 1.1},
+    {"jev_min_confidence": True}, {"jev_min_confidence": "nan"}, {"jev_min_confidence": []},
+    {"jev_api_key": "bad\nheader"}, {"jev_model": "gpt-test"}, {"jev_base_url": "http://evil.example"},
+    {"clear_jev_api_key": "true"}, {"clear_jev_api_key": True, "jev_api_key": "new"},
+])
+def test_invalid_jev_settings_do_not_overwrite_existing_settings(tmp_path, patch):
+    store = SettingsStore(tmp_path)
+    store.update(provider())
+    before = store.path.read_bytes()
+    with pytest.raises(ValueError):
+        store.update(patch)
+    assert store.path.read_bytes() == before
+
+
+def test_jev_environment_fallback_never_changes_original_provider(tmp_path, monkeypatch):
+    monkeypatch.setenv("ALPHAOS_JEV_ENABLED", "true")
+    monkeypatch.setenv("TYPESAFE_API_KEY", "JEV_ENV_CANARY")
+    monkeypatch.setenv("ALPHAOS_JEV_MIN_CONFIDENCE", "0.8")
+    store = SettingsStore(tmp_path)
+    settings = store.resolve()
+    assert settings["jev_enabled"] and settings["jev_min_confidence"] == .8
+    assert settings["jev_api_key"] == "JEV_ENV_CANARY" and settings["api_key"] == ""
+    assert "JEV_ENV_CANARY" not in json.dumps(store.public_config())
+    assert not store.path.exists()
+
+
+def test_saved_jev_settings_override_invalid_environment_fallback(tmp_path, monkeypatch):
+    store = SettingsStore(tmp_path)
+    store.update({"jev_enabled": False, "jev_min_confidence": .8})
+    monkeypatch.setenv("ALPHAOS_JEV_ENABLED", "not-a-bool")
+    monkeypatch.setenv("ALPHAOS_JEV_MIN_CONFIDENCE", "not-a-number")
+    result = store.resolve()
+    assert result["jev_enabled"] is False and result["jev_min_confidence"] == .8
+
+
+def test_jev_explicit_probe_can_test_disabled_gate_and_redacts_errors(tmp_path, monkeypatch):
+    from alpharesearchos import jev_client
+    store = SettingsStore(tmp_path)
+    store.update({"jev_api_key": "PRIVATE_JEV_KEY"})
+    calls = []
+    def respond(context, *, settings, timeout):
+        calls.append(context)
+        assert not settings["jev_enabled"] and timeout == 15
+        return {"decision": "reject"}, {"model": "jev-1.13.0"}
+    monkeypatch.setattr(jev_client, "review_gate", respond)
+    assert store.test_jev_connection()["ok"] and len(calls) == 1
+    def fail(*args, **kwargs):
+        raise ValueError("PRIVATE_JEV_KEY")
+    monkeypatch.setattr(jev_client, "review_gate", fail)
+    result = store.test_jev_connection()
+    assert not result["ok"] and "PRIVATE_JEV_KEY" not in json.dumps(result)

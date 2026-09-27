@@ -57,11 +57,23 @@ def _review_record(candidate: dict) -> dict:
     return {key: review[key] for key in ("decision", "critique", "risks", "suggested_action") if key in review}
 
 
+def _jev_record(candidate: dict) -> dict:
+    gate = _mapping(candidate.get("jev_gate"))
+    result = {key: gate[key] for key in ("decision", "confidence", "threshold", "summary") if key in gate}
+    for key, allowed in [("probabilities", ("approve", "revise", "reject")),
+                         ("checks", ("hypothesis_alignment", "cost_support", "fold_consistency", "evidence_sufficiency"))]:
+        values = _mapping(gate.get(key))
+        if values:
+            result[key] = {name: values[name] for name in allowed if name in values}
+    return result
+
+
 def _usage_records(trials: list[dict]) -> list[dict]:
     records = []
     for trial in trials:
         proposer = _mapping(trial.get("proposer_usage")) or _mapping(trial.get("llm_usage"))
-        for role, usage in [("提案", proposer), ("独立复核", _mapping(trial.get("reviewer_usage")))]:
+        for role, usage in [("提案", proposer), ("独立复核", _mapping(trial.get("reviewer_usage"))),
+                            ("Jev 复核", _mapping(trial.get("jev_usage")))]:
             if usage:
                 records.append({"trial": trial.get("id"), "role": role, "provider": usage.get("provider"),
                                 "model": usage.get("model"), "tokens": usage.get("reported_total_tokens"),
@@ -186,6 +198,11 @@ def _html_report(report: dict) -> str:
         name = ("★ " if trial.get("id") == selected.get("id") else "") + str(trial.get("name", trial.get("id", "—")))
         trial_rows.append([f'<strong>{_escape(name)}</strong><br><span class="muted">{_escape(trial.get("id"))}</span>', '<code>' + _escape(_strategy_text(trial)).replace("\n", "<br>") + '</code>', _number(trial.get("score"), 3), _number(_mapping(trial.get("metrics")).get("sharpe")), f'<span class="status status-{css}">{_escape(_status(status))}</span>', _escape(trial.get("reason") or _review_record(trial).get("decision") or "—")])
     parts.append(_table(["候选", "模型与全部特征 / 表达式", "开发期评分", "开发期夏普", "状态", "说明"], trial_rows))
+    jev_trials = [trial for trial in trials if _jev_record(trial)]
+    if jev_trials:
+        parts.append('<h3>Jev 开发期判断</h3><p class="note">判断概率和模型置信度不是策略盈利概率。低信心不会自动放行。</p>')
+        for trial in jev_trials:
+            parts.append(f'<details><summary>{_escape(trial.get("id"))} · {_escape(_jev_record(trial).get("decision"))}</summary><pre>{_escape(_json(_jev_record(trial)))}</pre></details>')
     parts.append('<p class="note">所有候选只通过开发期评分比较；开发期指标与留出期指标分别记录。</p></section><section class="panel"><h2>提案与独立复核用量</h2>')
     usage_rows = [[_escape(item["trial"]), _escape(item["role"]), _escape(item["provider"]), _escape(item["model"]), _number(item["tokens"], 0), _number(item["seconds"], 2)] for item in _usage_records(trials)]
     parts.append(_table(["候选", "角色", "提供方", "模型", "报告 tokens", "请求秒数"], usage_rows))
@@ -250,6 +267,11 @@ def _markdown_report(report: dict) -> str:
     for trial in _list(report.get("trials")):
         if isinstance(trial, dict):
             lines.append(f'| {_md(trial.get("name", trial.get("id")))} | {_md(_strategy_text(trial))} | {_number(trial.get("score"), 3)} | {_md(_status(trial.get("status")))} | {_md(trial.get("reason") or _review_record(trial).get("decision") or "—")} |')
+    jev_trials = [trial for trial in _list(report.get("trials")) if isinstance(trial, dict) and _jev_record(trial)]
+    if jev_trials:
+        lines.extend(["", "## Jev 开发期判断", "", "判断概率和模型置信度不是策略盈利概率。低信心不会自动放行。", ""])
+        for trial in jev_trials:
+            lines.extend([f'### {_md(trial.get("id"))}', "", _fence(_json(_jev_record(trial)), "json"), ""])
     lines.extend(["", "## 提案与独立复核用量", "", "| 候选 | 角色 | 提供方 | 模型 | 报告 tokens | 请求秒数 |", "| --- | --- | --- | --- | ---: | ---: |"])
     for item in _usage_records([value for value in _list(report.get("trials")) if isinstance(value, dict)]):
         lines.append(f'| {_md(item["trial"])} | {_md(item["role"])} | {_md(item["provider"])} | {_md(item["model"])} | {_number(item["tokens"], 0)} | {_number(item["seconds"], 2)} |')
