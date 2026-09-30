@@ -24,8 +24,9 @@ def test_wheel_installs_and_serves_outside_the_source_checkout(tmp_path):
                    if not key.startswith(("ALPHAOS_", "PYTHON", "OPENAI_", "TYPESAFE_"))
                    and key not in {"VIRTUAL_ENV", "CONDA_PREFIX"}}
 
-    def run(args):
-        result = subprocess.run(args, cwd=tmp_path, env=environment, capture_output=True, text=True, timeout=120)
+    def run(args, **overrides):
+        result = subprocess.run(args, cwd=tmp_path, env={**environment, **overrides},
+                                capture_output=True, text=True, timeout=120)
         assert result.returncode == 0, result.stdout + result.stderr
         return result.stdout
 
@@ -33,7 +34,13 @@ def test_wheel_installs_and_serves_outside_the_source_checkout(tmp_path):
     target = tmp_path / "installed"
     run([uv, "venv", "--python", sys.executable, str(target)])
     python = target / "bin" / "python"
-    run([uv, "pip", "install", "--offline", "--python", str(python), str(wheels[0])])
+    # A locked sync caches wheel URLs, but need not cache registry index pages.
+    # Reuse those exact locked dependencies rather than resolving broad wheel
+    # constraints against an index which a fresh CI runner has never fetched.
+    run([uv, "sync", "--locked", "--offline", "--no-install-project", "--no-default-groups",
+         "--project", str(root)], UV_PROJECT_ENVIRONMENT=str(target))
+    run([uv, "pip", "install", "--offline", "--no-deps", "--python", str(python), str(wheels[0])])
+    run([uv, "pip", "check", "--python", str(python)])
     assert "serve" in run([str(target / "bin" / "alphaos"), "--help"])
     assert "serve" in run([str(python), "-I", "-m", "alpharesearchos", "--help"])
     output = run([str(python), "-I", "-c", '''
