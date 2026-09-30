@@ -22,11 +22,17 @@ python -m pip install -e .
 alphaos serve
 ```
 
-The main workflow is **import CSV → connect a model → start research**.
+The main workflow is **inspect and import CSV → connect a model → start research**.
+
+### Appearance
+
+Use the top-bar theme button to switch between **dark and light**. First use follows the operating system preference; a manual choice is saved in this browser. Both themes include the research charts, settings, library, backtests, and data preview.
 
 ## Standard CSV
 
-In **Research / 自动研究** or **Backtest / 独立回测**, click **Import CSV / 导入 CSV** beside the dataset selector. Select your UTF-8 file. A successful import immediately selects the new dataset.
+In **Research / 自动研究** or **Backtest / 独立回测**, click **Import CSV / 导入 CSV** beside the dataset selector. Select your UTF-8 file. Inspect its asset coverage, common date range, duplicate rows, missing observations, and research eligibility in the preview. Click **Confirm import / 确认导入** to save and select the dataset, or cancel without writing a file. Invalid datasets cannot be confirmed.
+
+The preview does not fill missing records or infer an exchange calendar. Missing dates are measured against dates present elsewhere in the supplied panel. Adjustment conventions cannot be verified from CSV alone; check the source before importing.
 
 Use these exact English column names:
 
@@ -65,7 +71,7 @@ The application discovers the CLI on `PATH`, with a macOS application-bundled CL
 
 ### OpenAI-compatible API
 
-Choose the compatible API provider and enter:
+Choose the compatible API provider, select a preset or **Custom / 自定义**, and enter:
 
 - **Base URL**, such as `https://your-provider.example/v1`.
 - **Model ID** supported by that endpoint.
@@ -75,25 +81,26 @@ The API must support Chat Completions with a JSON text response. HTTPS endpoints
 
 Agent requests use `max_completion_tokens=1800` by default and omit temperature. Use the settings' token-field option for an endpoint that expects `max_tokens`; temperature is optional and should match the model's supported parameters.
 
+Presets fill the endpoint and token parameter. Enter the exact model ID available to your account or local installation:
+
+| Preset | Base URL | Token parameter |
+| --- | --- | --- |
+| [DeepSeek](https://api-docs.deepseek.com/) | `https://api.deepseek.com/v1` | `max_tokens` |
+| [Gemini compatibility](https://ai.google.dev/gemini-api/docs/openai) | `https://generativelanguage.googleapis.com/v1beta/openai` | `max_tokens` |
+| [Ollama](https://docs.ollama.com/api/openai-compatibility) | `http://localhost:11434/v1` | `max_tokens` |
+| Custom | Your compatible endpoint | Provider-dependent |
+
+Changing the endpoint requires a key for the new connection; the interface clears the old key rather than carrying it to another service. Ollama uses a local placeholder. Presets describe protocol settings, not a guarantee that every model supports this workflow. The automated suite uses simulated providers; test your selected model explicitly. Native Messages or Responses endpoints are not accepted as Chat Completions endpoints.
+
 ### Save and test
 
-Saved settings apply to new research. A running experiment retains the connection selected when it started. **Test connection** sends one real model request; saving a configuration and browsing existing results are local actions.
+Saved settings apply to new research. A running experiment retains the connection selected when it started. **Test connection** sends one real model request and validates a small structured research proposal, including its expressions and model parameters. A text-only reply is insufficient. Saving a configuration and browsing existing results are local actions.
 
 Each proposal and review uses its own request. The workbench exposes request counts, returned model usage, and the reason a run stops.
 
-### Optional Jev review
+### Advanced review
 
-In Settings, enable **Jev 决策复核** to add a structured development-evidence check
-after the existing model reviewer approves a candidate. Save a separate TypeSafe
-key; the default is the fixed `jev-1.13.0` model and a `0.7` threshold. Jev is
-disabled by default and applies only to agent research. Saving or reading settings
-makes no inference request; **测试 Jev 连接** is an explicit provider request.
-
-Each Jev attempt uses one of the existing model requests and reserves 32,768
-tokens for admission. With Jev enabled, 12 requests can cover at most four
-complete proposal/review/gate sequences. Low confidence, failed checks and
-service errors do not pass selection. The candidate panel and exports include
-the recorded probabilities and usage. See [Jev configuration and protocol](JEV.md).
+An optional additional development-evidence review is available in advanced settings. It is disabled by default and shares the experiment's request, time, and token-admission budgets. Its connection is configured and tested separately. See [configuration and protocol](JEV.md) for the provider-specific fields.
 
 ## Create research
 

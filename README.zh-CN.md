@@ -2,23 +2,23 @@
 
 <h1>AlphaResearchOS</h1>
 <p><strong>自主量化研究工作台</strong></p>
-<p>从市场数据出发，提出研究假设、训练预测模型、形成可审计的策略，支持可选 Jev 判断。</p>
+<p>从市场数据出发，提出研究假设、训练预测模型、形成可复现、可审计的策略。</p>
 
 <p><a href="README.md">English</a> &nbsp;|&nbsp; <strong>简体中文</strong></p>
 
 <p>
   <img src="https://img.shields.io/badge/Python-3.11%E2%80%933.13-3776AB?logo=python&logoColor=white" alt="Python 3.11–3.13">
-  <img src="https://img.shields.io/badge/Models-Codex%20%2B%20API%20%2B%20Jev-16877B" alt="Codex、兼容 API 与可选 Jev">
+  <img src="https://img.shields.io/badge/Models-Codex%20%2B%20API-16877B" alt="Codex 与兼容 API">
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-64748B" alt="MIT License"></a>
 </p>
 
-<p><a href="#快速开始">快速开始</a> · <a href="#行业-etf-表现">行业 ETF 表现</a> · <a href="docs/JEV.md">Jev 复核</a> · <a href="docs/USER_GUIDE.md">使用指南</a></p>
+<p><a href="#快速开始">快速开始</a> · <a href="#行业-etf-表现">行业 ETF 表现</a> · <a href="docs/USER_GUIDE.md">使用指南</a></p>
 
 </div>
 
 AlphaResearchOS 将量化研究流程整合进本地工作台。导入标准 OHLCV CSV，连接 Codex 或兼容模型 API，输入希望研究的策略方向，即可开始实验。
 
-**研究假设 → 特征与模型 → 开发评价 → 独立复核 → 可选 Jev 检查 → 迭代 → 留出评价**
+**研究假设 → 特征与模型 → 开发评价 → 独立复核 → 迭代 → 留出评价**
 
 ![AlphaResearchOS 研究工作台](docs/assets/workbench.png)
 
@@ -30,7 +30,18 @@ AlphaResearchOS 将量化研究流程整合进本地工作台。导入标准 OHL
 | 比较排名组合、岭回归与直方图梯度提升 | 查看父轨迹、研究理由和后续实验 | 分析净值、回撤、换手与成本敏感性 |
 | 开发期经验与 UCB 父节点选择指导搜索 | 设置请求、候选、时间和 token 准入预算 | 管理因子库，导出完整研究报告 |
 
-**可选 Jev 复核。** 在独立模型复核之后，增加带有逐项概率和决策置信度的结构化判断。检查只接收开发期证据，计入原有研究预算，失败或低置信度的候选不能入选。默认关闭。[工作原理 →](docs/JEV.md)
+顶部按钮可切换 **暗色与亮色主题**；首次使用跟随系统，手动选择后自动记住偏好。
+
+<details>
+<summary>暗色与亮色界面预览</summary>
+
+以下为使用合成演示数据的界面预览。
+
+![Dark theme](docs/assets/workbench-dark.png)
+
+![Light theme](docs/assets/workbench-light.png)
+
+</details>
 
 ## 快速开始
 
@@ -43,8 +54,8 @@ uv run alphaos serve
 
 打开 [http://127.0.0.1:8765](http://127.0.0.1:8765/)，按以下顺序操作：
 
-1. **导入数据**：在自动研究的数据选择旁点击 **导入 CSV**。
-2. **连接模型**：在设置中选择已登录的 **Codex CLI**，或填写兼容 API 的地址、模型 ID 与密钥。
+1. **体检并导入数据**：点击 **导入 CSV**，预览资产覆盖、共同日期与校验结果，再确认导入。
+2. **连接模型**：选择已登录的 **Codex CLI**、DeepSeek / Gemini / Ollama 预设或自定义兼容 API；填写模型 ID，保存后测试结构化返回。
 3. **开始研究**：选择导入的数据，填写研究方向和预算，查看候选提案、训练、复核与评价过程。
 
 CSV 使用以下标准字段：
@@ -62,8 +73,6 @@ date,symbol,open,high,low,close,volume
 在 **9 只美国行业 ETF** 上，AlphaResearchOS 选出的双特征岭回归策略，在 **2023-05-11 至 2026-09-17** 期间计入 **单边 10 bps 交易成本**后，取得 **117.53% 累计收益、26.22% CAGR 和 1.5608 夏普比率**。
 
 数据覆盖 **2010-01-04 至 2026-09-17**。训练和候选选择使用 **2023-05-08** 及之前的历史；下表与图表对应其后的 841 日留出期。所有策略每 5 个交易日调仓，AlphaResearchOS 与动量基线持有排名前 3 只资产，等权基线持有全部 9 只。
-
-这是 **接入 Jev 之前的历史基准**，衡量原有研究流程；尚未实测 Jev 的收益增益，也未进行真实服务消融对照。
 
 ![行业 ETF 留出期净值曲线](docs/assets/benchmark-equity.png)
 

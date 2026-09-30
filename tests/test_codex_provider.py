@@ -260,11 +260,14 @@ def test_codex_configuration_depends_on_login_instead_of_existing_api_key(tmp_pa
 def test_settings_connection_test_dispatches_to_codex_only_on_explicit_probe(tmp_path, monkeypatch):
     calls = []
 
-    def proposal(direction, history, *, model="", timeout=90):
-        calls.append((direction, history, model, timeout))
-        return {**PROPOSAL, "origin": "codex_cli", "parents": []}, {"provider": "codex_cli", "model": model or STATUS["default_model"]}
+    def proposal(prompt, schema, *, model="", timeout=90):
+        calls.append((prompt, schema, model, timeout))
+        value = {"name": "动量", "hypothesis": "检验趋势", "features": ["ret(close,20)"], "model": "rank",
+                 "model_params": {"alpha": 1, "train_window": 504, "retrain_every": 63, "horizon": 5, "smoothing": 3},
+                 "rationale": "连接检查"}
+        return value, {"provider": "codex_cli", "model": model or STATUS["default_model"]}
 
-    monkeypatch.setattr(codex, "codex_proposal", proposal)
+    monkeypatch.setattr(codex, "codex_structured", proposal)
     store = SettingsStore(tmp_path / "state")
     store.update({"provider": "codex_cli", "codex_model": "codex-choice"})
     store.public_config()
@@ -273,3 +276,4 @@ def test_settings_connection_test_dispatches_to_codex_only_on_explicit_probe(tmp
     result = store.test_connection()
     assert result["ok"] is True and result["model"] == "codex-choice"
     assert len(calls) == 1 and calls[0][2] == "codex-choice"
+    assert "model_params" in calls[0][1]["properties"]

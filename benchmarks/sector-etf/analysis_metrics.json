@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "evidence_status": "pre-Jev historical benchmark; no Jev uplift or ablation measured",
+  "evidence_status": "Historical holdout benchmark from recorded results and daily curves",
   "source_sha256": {
     "results.json": "e4adac661e305f9cf3cfb09c7ce55062624551def47355bb7b1c474d5124c651",
     "curves.csv": "9cc527e1c4143a352b3bd2a8ddcbbd41985fea60a420d6062d81f1b8c001c690"

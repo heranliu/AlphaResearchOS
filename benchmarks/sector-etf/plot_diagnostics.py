@@ -1,4 +1,4 @@
-"""Derive transparent diagnostics from the immutable pre-Jev benchmark evidence.
+"""Derive transparent diagnostics from the recorded benchmark evidence.
 
 Run: uv run --locked --extra plot python benchmarks/sector-etf/plot_diagnostics.py
 No downloads, model calls, backtest reruns, or edits to results.json / curves.csv.
@@ -86,7 +86,7 @@ def derive(result, dates, curves):
         }
     return {
         "schema_version": 1,
-        "evidence_status": "pre-Jev historical benchmark; no Jev uplift or ablation measured",
+        "evidence_status": "Historical holdout benchmark from recorded results and daily curves",
         "source_sha256": {
             name: hashlib.sha256((HERE / name).read_bytes()).hexdigest()
             for name in ("results.json", "curves.csv")
@@ -127,7 +127,7 @@ def save(fig, output, name):
 
 def diagnostics(result, dates, curves, metrics, output):
     fig = plt.figure(figsize=(14.2, 10.3))
-    heading(fig, "Performance beyond the headline", "2023-05-11 — 2026-09-17 · 841 sessions · 10 bps one-way costs · pre-Jev")
+    heading(fig, "Performance beyond the headline", "2023-05-11 — 2026-09-17 · 841 sessions · 10 bps one-way costs")
     handles = [Line2D([0], [0], color=color, lw=3, label=label)
                for label, color in zip(LABELS, COLORS, strict=True)]
     fig.legend(handles=handles, loc="upper left", bbox_to_anchor=(.06, .835), ncol=4,
@@ -193,14 +193,14 @@ def diagnostics(result, dates, curves, metrics, output):
     ax.tick_params(axis="y", length=0)
     ax.text(0, -.23, "39 complete months · Jun 2023–Aug 2026 · no ties", transform=ax.transAxes,
             color=MUTED, fontsize=9)
-    fig.text(.065, .027, "Same dates and costs for all portfolios. Historical comparisons are descriptive; Jev was not used in this benchmark.",
+    fig.text(.065, .027, "Same dates and costs for all portfolios. Historical comparisons use the recorded holdout results.",
              color=MUTED, size=9.5)
     save(fig, output, "benchmark-diagnostics")
 
 
 def implementation(result, output):
     fig = plt.figure(figsize=(14.2, 6.7))
-    heading(fig, "Trading frictions and portfolio activity", "Frozen strategy · identical scoring and selection · costs varied after selection · pre-Jev")
+    heading(fig, "Trading frictions and portfolio activity", "Frozen strategy · identical scoring and selection · costs varied after selection")
     grid = fig.add_gridspec(1, 2, left=.08, right=.96, bottom=.19, top=.72, wspace=.39)
     ax = fig.add_subplot(grid[0, 0])
     ax.set_title("01  Cost-matched net return", loc="left", pad=15)

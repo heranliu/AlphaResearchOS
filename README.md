@@ -2,23 +2,23 @@
 
 <h1>AlphaResearchOS</h1>
 <p><strong>Agentic Quant Research</strong></p>
-<p>Turn market data into research hypotheses, predictive models, and auditable strategies — with optional Jev judgment.</p>
+<p>Turn market data into research hypotheses, predictive models, and auditable strategies.</p>
 
 <p><strong>English</strong> &nbsp;|&nbsp; <a href="README.zh-CN.md">简体中文</a></p>
 
 <p>
   <img src="https://img.shields.io/badge/Python-3.11%E2%80%933.13-3776AB?logo=python&logoColor=white" alt="Python 3.11–3.13">
-  <img src="https://img.shields.io/badge/Models-Codex%20%2B%20API%20%2B%20Jev-16877B" alt="Codex, compatible APIs, and optional Jev">
+  <img src="https://img.shields.io/badge/Models-Codex%20%2B%20API-16877B" alt="Codex and compatible APIs">
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-64748B" alt="MIT License"></a>
 </p>
 
-<p><a href="#quick-start">Quick start</a> · <a href="#benchmark">Benchmark</a> · <a href="docs/JEV.md">Jev review</a> · <a href="docs/USER_GUIDE.md">User guide</a></p>
+<p><a href="#quick-start">Quick start</a> · <a href="#benchmark">Benchmark</a> · <a href="docs/USER_GUIDE.md">User guide</a></p>
 
 </div>
 
 AlphaResearchOS brings the quantitative research loop into one local workbench. Import a standard OHLCV CSV, connect Codex or a compatible model API, and describe the strategy you want to investigate.
 
-**Hypothesis → Features + model → Development evaluation → Independent review → Optional Jev gate → Iteration → Holdout**
+**Hypothesis → Features + model → Development evaluation → Independent review → Iteration → Holdout**
 
 ![AlphaResearchOS workbench](docs/assets/workbench.png)
 
@@ -30,7 +30,18 @@ AlphaResearchOS brings the quantitative research loop into one local workbench. 
 | Compare rank ensembles, Ridge, and histogram gradient boosting | Inspect parent trajectories, rationale, and follow-up experiments | Explore equity, drawdown, turnover, and cost sensitivity |
 | Guide search with development memory and UCB parent selection | Set request, candidate, time, and token-admission budgets | Manage a factor library and export complete research reports |
 
-**Optional Jev review.** Add typed judgments with check probabilities and decision confidence after the independent model review. The gate sees development evidence, shares the research budget, and keeps failed or low-confidence candidates out of selection. Disabled by default. [How it works →](docs/JEV.md)
+Choose a **dark or light theme** from the top bar. The workbench follows your system on first use and remembers your choice.
+
+<details>
+<summary>Dark and light theme preview</summary>
+
+Interface preview with synthetic demonstration data.
+
+![Dark theme](docs/assets/workbench-dark.png)
+
+![Light theme](docs/assets/workbench-light.png)
+
+</details>
 
 ## Quick start
 
@@ -43,8 +54,8 @@ uv run alphaos serve
 
 Open [http://127.0.0.1:8765](http://127.0.0.1:8765/), then:
 
-1. **Import your data.** In Research, click **Import CSV / 导入 CSV** beside the dataset selector.
-2. **Connect a model.** In Settings, choose your authenticated **Codex CLI** or enter a compatible API's base URL, model ID, and key.
+1. **Inspect and import your data.** Click **Import CSV / 导入 CSV**, review coverage and validation results, then confirm the import.
+2. **Connect a model.** Choose your authenticated **Codex CLI**, a DeepSeek/Gemini/Ollama API preset, or a custom compatible endpoint. Enter a model ID, save, and test its structured response.
 3. **Start research.** Select the imported dataset, enter a direction and budget, and follow candidates as they are proposed, trained, reviewed, and evaluated.
 
 Your CSV uses these columns:
@@ -62,8 +73,6 @@ New research defaults to **6 candidates, 12 model requests, and 900 seconds**. T
 On **nine US sector ETFs**, AlphaResearchOS's selected two-feature Ridge strategy achieved **117.53% total return**, **26.22% CAGR**, and a **1.5608 Sharpe ratio** over **2023-05-11 to 2026-09-17**, after **10 bps one-way transaction costs**.
 
 The dataset spans **2010-01-04 to 2026-09-17**. Model training and candidate selection use history through **2023-05-08**; the table and charts below cover the subsequent 841-session holdout. Strategies rebalance every five sessions. AlphaResearchOS and the momentum baselines hold the top three assets; equal weight holds all nine.
-
-This is the **historical benchmark before Jev integration**. It measures the existing research workflow; no Jev performance uplift or live-provider ablation has been measured.
 
 ![Sector ETF holdout equity curves](docs/assets/benchmark-equity.png)
 

@@ -4,7 +4,7 @@
 
 AlphaResearchOS achieved **117.53% total return**, **26.22% CAGR**, and a **1.5608 Sharpe ratio** on nine US sector ETFs during **2023-05-11 to 2026-09-17**, after **10 bps one-way transaction costs**. Development scoring selected a two-feature Ridge strategy before holdout evaluation.
 
-**Evidence status:** this benchmark predates the optional [Jev review gate](JEV.md). The figures below are derived from the existing fixed results and daily curves, not a rerun with Jev. No live Jev evaluation or on/off performance ablation has been measured. The comparisons describe one universe and holdout period, not a statistical guarantee of future outperformance.
+The figures below are derived from the recorded results and daily curves for the evaluation settings documented here. Comparisons cover the same universe, dates, and costs.
 
 ## Data and portfolio settings
 

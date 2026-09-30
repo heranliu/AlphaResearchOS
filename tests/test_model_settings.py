@@ -175,7 +175,7 @@ def test_llm_proposal_uses_scoped_settings_and_zero_temperature(monkeypatch):
         captured.append(request)
         return io.BytesIO(json.dumps({"choices": [{"message": {"content":
             '{"name":"x","hypothesis":"y","expression":"rank(close)"}'}}]}).encode())
-    monkeypatch.setattr("urllib.request.urlopen", response)
+    fake_opener(monkeypatch, response)
     with provider_context(provider(temperature=0, token_field="max_tokens")):
         _, usage = llm_proposal("trend", [])
     body = json.loads(captured[0].data)
@@ -199,7 +199,10 @@ def test_explicit_connection_probe_uses_real_protocol_but_never_returns_body(tmp
 
     def respond(request, **kwargs):
         captured.append(request)
-        return io.BytesIO(json.dumps({"model": "secret-never-return", "choices": [{"message": {"content": "secret-never-return"}}]}).encode())
+        proposal = {"name": "动量", "hypothesis": "secret-never-return", "features": ["ret(close,20)"],
+                    "model": "rank", "model_params": {"alpha": 1, "train_window": 504, "retrain_every": 63,
+                                                      "horizon": 5, "smoothing": 3}, "rationale": "连接检查"}
+        return io.BytesIO(json.dumps({"model": "secret-never-return", "choices": [{"message": {"content": json.dumps(proposal)}}]}).encode())
     fake_opener(monkeypatch, respond)
     result = store.test_connection()
     assert result["ok"] and result["model"] == "manual-model"
@@ -207,12 +210,14 @@ def test_explicit_connection_probe_uses_real_protocol_but_never_returns_body(tmp
     assert "secret-never-return" not in json.dumps(result)
     assert len(captured) == 1
     body = json.loads(captured[0].data)
-    assert body["max_completion_tokens"] == 700
-    assert body["messages"] == [{"role": "user", "content": "Reply with OK."}]
+    assert body["max_completion_tokens"] == 1800
+    assert body["messages"][0]["role"] == "system"
+    assert "model_params" in body["messages"][0]["content"]
+    assert "Connection protocol check" in body["messages"][1]["content"]
     assert "temperature" not in body
 
 
-@pytest.mark.parametrize("kind", ["http", "connection", "json", "empty"])
+@pytest.mark.parametrize("kind", ["http", "connection", "json", "empty", "plain_text"])
 def test_connection_failures_redact_provider_messages(tmp_path, monkeypatch, kind):
     store = SettingsStore(tmp_path / "state")
     store.update(provider())
@@ -224,6 +229,8 @@ def test_connection_failures_redact_provider_messages(tmp_path, monkeypatch, kin
             raise urllib.error.URLError("secret-never-return")
         if kind == "empty":
             return io.BytesIO(b'{"choices":[{"message":{"content":null}}]}')
+        if kind == "plain_text":
+            return io.BytesIO(b'{"choices":[{"message":{"content":"OK"}}]}')
         return io.BytesIO(b'secret-never-return')
     fake_opener(monkeypatch, respond)
     result = store.test_connection()
@@ -239,6 +246,44 @@ def test_unconfigured_probe_sends_no_request(tmp_path):
 
 def test_probe_never_follows_authorization_redirect():
     assert _NoRedirect().redirect_request(None, None, 302, "", {}, "https://evil.example") is None
+
+
+@pytest.mark.parametrize("patch", [{"base_url": "https://new.example/v1"},
+                                  {"base_url": "https://new.example/v1", "api_key": ""}])
+def test_endpoint_change_without_new_key_clears_saved_and_environment_credentials(tmp_path, monkeypatch, patch):
+    monkeypatch.setenv("OPENAI_API_KEY", "environment-secret")
+    store = SettingsStore(tmp_path)
+    store.update(provider())
+    public = store.update(patch)
+    assert not public["configured"] and not public["api_key_set"]
+    assert store.resolve()["api_key"] == ""
+    assert json.loads(store.path.read_text())["api_key"] == ""
+
+
+def test_endpoint_change_clears_an_environment_only_key(tmp_path, monkeypatch):
+    monkeypatch.setenv("ALPHAOS_LLM_MODEL", "environment-model")
+    monkeypatch.setenv("ALPHAOS_LLM_BASE_URL", "https://previous.example/v1")
+    monkeypatch.setenv("OPENAI_API_KEY", "environment-secret")
+    store = SettingsStore(tmp_path)
+    assert store.public_config()["configured"]
+    public = store.update({"base_url": "http://localhost:11434/v1"})
+    assert not public["configured"] and store.resolve()["api_key"] == ""
+    assert json.loads(store.path.read_text())["api_key"] == ""
+
+
+@pytest.mark.parametrize("url", ["https://provider.example/v1/", "https://PROVIDER.example:443/v1"])
+def test_equivalent_endpoint_and_blank_key_preserve_existing_secret(tmp_path, url):
+    store = SettingsStore(tmp_path)
+    store.update(provider())
+    assert store.update({"base_url": url, "api_key": ""})["configured"]
+    assert store.resolve()["api_key"] == "secret-never-return"
+
+
+def test_new_endpoint_accepts_an_explicit_replacement_key(tmp_path):
+    store = SettingsStore(tmp_path)
+    store.update(provider())
+    assert store.update({"base_url": "https://new.example/v1", "api_key": "new-service-key"})["configured"]
+    assert store.resolve()["api_key"] == "new-service-key"
 
 
 def test_jev_is_optional_and_its_secret_is_managed_independently(tmp_path, monkeypatch):

@@ -211,6 +211,8 @@ def run_agent_research(directory: Path, *, stop_after=None, should_pause=None, m
             }
             event(report, "自主研究：轨迹检索、因子与模型联合提案、独立复核；预算耗尽即停止")
         report["status"] = "running"
+        if report.get("stop_reason") in {"user_pause", "checkpoint"}:
+            report["stop_reason"] = None
         if state.get("pending"):
             pending = state["pending"]
             interrupted = pending.get("trial") or {"id": pending["id"], "name": "中断候选"}

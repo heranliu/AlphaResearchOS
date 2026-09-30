@@ -101,17 +101,31 @@ def test_atomic_checkpoint_retains_old_json_after_replace_failure(tmp_path):
                 pass
 
 
-def test_stop_resume_matches_uninterrupted_research(csv_path, tmp_path):
+@pytest.mark.parametrize("pause_reason", ["checkpoint", "user_pause"])
+def test_stop_resume_matches_uninterrupted_research(csv_path, tmp_path, monkeypatch, pause_reason):
     resumed_dir = engine.create_run(tmp_path / "runs", _config(), csv_path)
-    paused = _run(resumed_dir, stop_after=2)
+    options = {"stop_after": 2} if pause_reason == "checkpoint" else {
+        "should_pause": lambda: len(read_json(resumed_dir / "report.json")["trials"]) >= 2}
+    paused = _run(resumed_dir, **options)
     assert paused["status"] == "paused"
+    assert paused["stop_reason"] == pause_reason
     assert paused["selected"] is None and paused["holdout"] is None
     assert paused["progress"]["completed"] == 2
     assert read_json(resumed_dir / "report.json")["_state"]["pending"] is None
-    resumed = _run(resumed_dir)
+    propose = engine.local_proposal
+
+    def checked_proposal(*args, **kwargs):
+        persisted = read_json(resumed_dir / "report.json")
+        assert persisted["status"] == "running" and persisted["stop_reason"] is None
+        return propose(*args, **kwargs)
+
+    with monkeypatch.context() as resumed_checks:
+        resumed_checks.setattr(engine, "local_proposal", checked_proposal)
+        resumed = _run(resumed_dir)
     direct_dir = engine.create_run(tmp_path / "runs", _config(), csv_path)
     direct = _run(direct_dir)
     assert resumed["status"] == direct["status"] == "completed"
+    assert resumed["stop_reason"] == direct["stop_reason"] == "trial_budget"
     keys = ["id", "expression", "status", "score", "metrics", "reason"]
     assert [{key: trial.get(key) for key in keys} for trial in resumed["trials"]] == [
         {key: trial.get(key) for key in keys} for trial in direct["trials"]

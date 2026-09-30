@@ -13,7 +13,6 @@ import secrets
 import stat
 import threading
 import time
-import urllib.error
 import urllib.parse
 import urllib.request
 from pathlib import Path
@@ -93,6 +92,17 @@ def validate_base_url(value: str) -> str:
         if not loopback:
             raise ValueError("HTTP is allowed only for localhost or a loopback IP address")
     return value
+
+
+def _endpoint_identity(value):
+    """Equivalent host spelling/default ports must not discard a saved key."""
+    parts = urllib.parse.urlsplit(validate_base_url(value))
+    host = parts.hostname.lower()
+    try:
+        host = ipaddress.ip_address(host).compressed
+    except ValueError:
+        pass
+    return parts.scheme, host, parts.port or (443 if parts.scheme == "https" else 80), parts.path
 
 
 def _temperature(value):
@@ -250,6 +260,19 @@ class SettingsStore:
                         raise ValueError(f"Cannot set and clear {key} in the same request")
                 if clear:
                     patch[key] = ""
+            if "base_url" in patch and not patch.get("api_key"):
+                from .proposals import environment_settings
+
+                previous_url = saved.get("base_url", environment_settings(raw_jev=True)["base_url"])
+                new_endpoint = _endpoint_identity(patch["base_url"])
+                try:
+                    changed = _endpoint_identity(previous_url) != new_endpoint
+                except ValueError:
+                    changed = True  # Replacing an invalid environment endpoint still requires a new key.
+                if changed:
+                    # Persist the empty override: an environment key also belongs
+                    # to the old service and must never follow an endpoint change.
+                    patch["api_key"] = ""
             effective = self._effective({**saved, **patch})
             # Persist only explicitly managed fields; unmodified env values stay fallback.
             updated = {key: effective[key] for key in set(saved) | set(patch)}
@@ -274,44 +297,29 @@ class SettingsStore:
         return result
 
     def test_connection(self):
-        """One explicit billable probe; no retries, model listing or startup calls."""
-        from .proposals import _generation_options
+        """One explicit proposal probe; use the research contract, never retries."""
+        from .proposals import provider_context
+        from .provider_transport import ModelRequestError
+        from .research_client import connection_probe
+
         started = time.monotonic()
         provider = self.resolve()
-        if provider["provider"] == "codex_cli":
-            from .codex_provider import codex_proposal
-            result = {"ok": False, "model": provider["codex_model"] or "CLI default", "latency_ms": 0}
-            try:
-                _, usage = codex_proposal("连接测试：给出简单的20日价格动量因子。", [], model=provider["codex_model"], timeout=90)
-                result.update(ok=True, model=usage["model"], message="Codex 连接成功，已返回结构化提案")
-            except (ValueError, RuntimeError, OSError, TypeError, KeyError):
-                result["message"] = "Codex 连接失败或超时；请检查本机登录和模型可用性"
-            result["latency_ms"] = round((time.monotonic() - started) * 1000, 1)
-            return result
-        result = {"ok": False, "model": provider["model"], "latency_ms": 0}
-        if not provider["model"] or not provider["api_key"]:
+        codex = provider["provider"] == "codex_cli"
+        result = {"ok": False, "model": (provider["codex_model"] or "CLI default") if codex else provider["model"], "latency_ms": 0}
+        if not codex and (not provider["model"] or not provider["api_key"]):
             return {**result, "message": "Set a model and API key before testing the connection"}
-        payload = {"model": provider["model"], **_generation_options(provider),
-                   "messages": [{"role": "user", "content": "Reply with OK."}]}
-        request = urllib.request.Request(provider["base_url"] + "/chat/completions",
-                                         data=json.dumps(payload).encode(),
-                                         headers={"Content-Type": "application/json", "Authorization": "Bearer " + provider["api_key"]})
         try:
-            with urllib.request.build_opener(_NoRedirect()).open(request, timeout=15) as response:
-                raw = response.read(100001)
-            if len(raw) > 100000:
-                raise ValueError("oversized")
-            data = json.loads(raw)
-            content = data["choices"][0]["message"].get("content")
-            if not isinstance(content, str) or not content.strip():
-                result["message"] = "Provider responded without text; check model and reasoning/completion budget"
-            else:
-                result.update(ok=True, message="Connection succeeded; model returned text")
-        except urllib.error.HTTPError as exc:
-            result.update(http_status=exc.code, message=f"Provider HTTP {exc.code}; check endpoint, model and credentials")
-        except (urllib.error.URLError, TimeoutError, OSError):
-            result["message"] = "Provider connection failed or timed out"
-        except (ValueError, KeyError, IndexError, TypeError, AttributeError):
-            result["message"] = "Provider response did not match the Chat Completions text protocol"
+            with provider_context(provider):
+                _, usage = connection_probe(timeout=90 if codex else 15)
+            result.update(ok=True, model=usage.get("model", result["model"]),
+                          message="连接成功，已通过结构化提案、因子表达式和模型参数校验")
+        except ModelRequestError as exc:
+            result["message"] = str(exc)
+            if exc.http_status is not None:
+                result["http_status"] = exc.http_status
+        except (RuntimeError, OSError):
+            result["message"] = "连接失败或超时；请检查服务地址、模型及登录状态"
+        except (ValueError, KeyError, IndexError, TypeError, AttributeError, SyntaxError):
+            result["message"] = "结构化提案校验失败；请检查模型、输出预算及接口兼容性"
         result["latency_ms"] = round((time.monotonic() - started) * 1000, 1)
         return result

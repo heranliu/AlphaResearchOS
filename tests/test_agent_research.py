@@ -276,9 +276,12 @@ def test_independent_reviewer_veto_cannot_be_selected(tmp_path, market, model, d
     assert report["_state"]["llm_calls"] == 2
 
 
-def test_pause_resume_preserves_charges_memory_graph_and_dev_feedback(tmp_path, market, model):
-    directory, paused = run(tmp_path, market, stop_after=1)
+@pytest.mark.parametrize("pause_reason", ["checkpoint", "user_pause"])
+def test_pause_resume_preserves_charges_memory_graph_and_dev_feedback(tmp_path, market, model, monkeypatch, pause_reason):
+    options = {"stop_after": 1} if pause_reason == "checkpoint" else {"should_pause": lambda: len(model.calls) >= 2}
+    directory, paused = run(tmp_path, market, **options)
     assert paused["status"] == "paused" and paused["selected"] is None
+    assert paused["stop_reason"] == pause_reason
     assert paused["_state"]["llm_calls"] == 2 and paused["_state"]["llm_reserved_tokens"] == 200
     old_graph = copy.deepcopy(paused["research"]["graph"])
     assert len(old_graph["nodes"]) == 1
@@ -289,8 +292,16 @@ def test_pause_resume_preserves_charges_memory_graph_and_dev_feedback(tmp_path, 
         with pytest.raises(ValueError, match="provider changed"):
             engine.run_research(directory)
     assert len(model.calls) == 2
+
+    def checked_model(*args, **kwargs):
+        persisted = read_json(directory / "report.json")
+        assert persisted["status"] == "running" and persisted["stop_reason"] is None
+        return model(*args, **kwargs)
+
+    monkeypatch.setattr(research_client, "structured_call", checked_model)
     resumed = engine.run_research(directory)
     assert resumed["status"] == "completed"
+    assert resumed["stop_reason"] == "trial_budget"
     assert resumed["_state"]["llm_calls"] == 4 and resumed["_state"]["llm_reserved_tokens"] == 400
     assert resumed["research"]["graph"]["nodes"][0] == old_graph["nodes"][0]
     assert len(memory.list_nodes(scope)) == 2

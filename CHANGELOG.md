@@ -1,16 +1,22 @@
 # Changelog
 
-## 0.5.0
+## 0.5.0 — 2026-09-30
 
-- Optional, default-off Jev development-evidence gate after independent review,
-  with typed decisions, four probability checks, configurable thresholds and
-  model-version tracking. Uncertain, failed or interrupted gates cannot pass selection.
-- Separate private Jev settings and explicit connection test; shared request,
-  time and token-admission budgets with checkpointed attempts and no retries.
-- Jev decisions and usage in the workbench, JSON/CSV and offline reports.
-- Layered benchmark diagnostics from unchanged pre-Jev evidence: drawdowns,
-  risk/return, calendar periods, complete-month baseline comparisons and costs.
-  These historical results do not measure Jev's incremental performance.
+- Dark and light workbench themes, system-aware first use, and saved browser preference.
+- CSV inspection before import, with asset coverage, common dates, actionable
+  validation results, and separate research/backtest eligibility.
+- DeepSeek, Gemini-compatible, Ollama, and custom API connection presets;
+  structured proposal validation in the explicit connection test.
+- Shared bounded Chat Completions transport, safe endpoint switching, and
+  clearer protocol failures without automatic retries.
+- Resuming a paused experiment clears stale pause messages, and late settings
+  responses preserve edits still being typed.
+- Additional optional development review with frozen settings, shared budgets,
+  recorded decisions, and conservative handling of failed or uncertain checks.
+- Layered benchmark diagnostics covering drawdowns, calendar periods,
+  baseline comparisons, and trading costs from the recorded results.
+- Expanded protocol, data-provider, browser workflow, and installed-package
+  tests, with dedicated browser and wheel smoke checks in CI.
 
 ## 0.4.0
 

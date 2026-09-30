@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "alpharesearchos"
 version = "0.5.0"
-description = "Agentic quant research with predictive models, independent reviews, optional Jev checks, and reproducible backtests"
+description = "Agentic quant research with predictive models, independent reviews, and reproducible backtests"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = ["numpy>=1.26,<3", "pandas>=2.2,<3", "scikit-learn>=1.7,<2"]
@@ -25,6 +25,7 @@ classifiers = [
 market = ["yfinance>=0.2.65,<2"]
 dev = ["pytest>=8,<10", "ruff>=0.12,<1"]
 plot = ["matplotlib>=3.9,<4"]
+e2e = ["playwright>=1.50,<2"]
 
 [project.scripts]
 alphaos = "alpharesearchos.cli:entrypoint"

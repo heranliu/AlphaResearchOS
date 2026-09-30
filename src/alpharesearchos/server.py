@@ -21,7 +21,7 @@ from urllib.parse import urlparse
 
 from . import __version__
 from .config import ResearchConfig
-from .data import FIELDS, load_csv
+from .data import FIELDS, inspect_csv, load_csv
 from .engine import create_run, run_research
 from .independent_backtest import create_backtest, list_backtests, run_backtest
 from .library import FactorLibrary
@@ -60,7 +60,8 @@ def dataset_error(exc):
     return "CSV 无法读取；请检查英文列名、逗号分隔、UTF-8 编码和数值字段。"
 
 
-def import_dataset(dataset_root, body):
+def dataset_upload(body):
+    """Validate the shared upload envelope without touching the filesystem."""
     if set(body) != {"name", "content"} or not isinstance(body.get("content"), str):
         raise ValueError("请提供 CSV 文件名 name 和 UTF-8 文本 content。")
     name = body.get("name")
@@ -73,6 +74,16 @@ def import_dataset(dataset_root, body):
         raise ValueError("CSV 文件为空，请选择包含表头和行情数据的文件。")
     if len(content.encode("utf-8")) > DATASET_MAX_BYTES:
         raise OverflowError("CSV 文件不能超过 20 MB。")
+    return name, content
+
+
+def inspect_dataset(body):
+    name, content = dataset_upload(body)
+    return {"name": name, **inspect_csv(content)}
+
+
+def import_dataset(dataset_root, body):
+    name, content = dataset_upload(body)
     destination = dataset_root / name
     if destination.exists() or destination.is_symlink():
         raise FileExistsError("已有同名数据集，请重命名 CSV 后重新导入。")
@@ -344,7 +355,7 @@ def make_server(runs_root: Path, dataset_root: Path, port=8765):
                         raise FileNotFoundError("Artifact is not available yet")
                     return self.send_bytes(target.read_bytes(), (mimetypes.guess_type(target)[0] or "text/plain") + "; charset=utf-8")
                 name = "index.html" if path == "/" else path.removeprefix("/static/").lstrip("/")
-                if name not in {"index.html", "app.js", "style.css"}:
+                if name not in {"index.html", "app.js", "theme.js", "style.css"}:
                     raise FileNotFoundError("Not found")
                 return self.send_bytes((static / name).read_bytes(), (mimetypes.guess_type(name)[0] or "text/plain") + "; charset=utf-8")
             except FileNotFoundError as exc:
@@ -362,13 +373,16 @@ def make_server(runs_root: Path, dataset_root: Path, port=8765):
             try:
                 path = urlparse(self.path).path
                 size = int(self.headers.get("Content-Length", "0"))
-                limit = DATASET_MAX_BYTES * 2 + 4096 if path == "/api/datasets" else 256000 if path == "/api/factors/import" else 16000
+                dataset_upload_path = path in {"/api/datasets", "/api/datasets/import", "/api/datasets/inspect"}
+                limit = DATASET_MAX_BYTES * 2 + 4096 if dataset_upload_path else 256000 if path == "/api/factors/import" else 16000
                 if not 0 <= size <= limit:
-                    return self.json({"error": "CSV 文件不能超过 20 MB。" if path == "/api/datasets" else "Request too large"}, 413)
+                    return self.json({"error": "CSV 文件不能超过 20 MB。" if dataset_upload_path else "Request too large"}, 413)
                 body = json.loads(self.rfile.read(size) or b"{}")
                 if not isinstance(body, dict):
                     raise ValueError("Expected a JSON object")
-                if path == "/api/datasets":
+                if path == "/api/datasets/inspect":
+                    return self.json({"inspection": inspect_dataset(body)})
+                if path in {"/api/datasets", "/api/datasets/import"}:
                     return self.json({"dataset": import_dataset(dataset_root, body)}, 201)
                 if path == "/api/factors/import":
                     return self.json(library.import_factors(body), 201)

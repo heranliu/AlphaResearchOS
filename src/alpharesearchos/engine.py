@@ -185,6 +185,8 @@ def run_research(directory: Path, *, stop_after: int | None = None, should_pause
         clock_start, prior = time.monotonic(), report["progress"]["elapsed_seconds"]
         bt = BacktestConfig(cost_bps=config.cost_bps, top_k=config.top_k, rebalance_every=config.rebalance_every)
         report["status"] = "running"
+        if report.get("stop_reason") in {"user_pause", "checkpoint"}:
+            report["stop_reason"] = None
         if state["pending"] is not None:
             pending = state["pending"]
             report["trials"].append({"id": pending["id"], "name": "中断实验", "status": "failed", "score": None,

@@ -16,6 +16,14 @@ def isolate_generation_options(monkeypatch):
     monkeypatch.delenv("ALPHAOS_LLM_TEMPERATURE", raising=False)
 
 
+def fake_provider(monkeypatch, callback):
+    class Opener:
+        def open(self, request, **kwargs):
+            return callback(request, **kwargs)
+
+    monkeypatch.setattr(urllib.request, "build_opener", lambda *handlers: Opener())
+
+
 def test_llm_json_protocol_and_no_secret_in_failure(monkeypatch):
     monkeypatch.setenv("ALPHAOS_LLM_MODEL", "mock-model")
     monkeypatch.setenv("ALPHAOS_LLM_API_KEY", "test-key-do-not-log")
@@ -26,7 +34,7 @@ def test_llm_json_protocol_and_no_secret_in_failure(monkeypatch):
     def response(request, **kwargs):
         captured.append(json.loads(request.data))
         return io.BytesIO(json.dumps(body).encode())
-    monkeypatch.setattr(urllib.request, "urlopen", response)
+    fake_provider(monkeypatch, response)
     candidate, usage = llm_proposal("研究趋势", [])
     assert candidate["expression"] == "rank(ret(close, 20))"
     assert usage["reported_total_tokens"] == 100
@@ -37,7 +45,7 @@ def test_llm_json_protocol_and_no_secret_in_failure(monkeypatch):
 
     def failed(request, **kwargs):
         raise urllib.error.HTTPError(request.full_url, 401, "test-key-do-not-log", {}, io.BytesIO(b"secret"))
-    monkeypatch.setattr(urllib.request, "urlopen", failed)
+    fake_provider(monkeypatch, failed)
     with pytest.raises(RuntimeError) as caught:
         llm_proposal("trend", [])
     assert "401" in str(caught.value)
@@ -56,7 +64,7 @@ def test_legacy_provider_parameters_are_explicit(monkeypatch):
         return io.BytesIO(json.dumps({"choices": [{"message": {"content":
             '{"name":"test","hypothesis":"trend","expression":"rank(ret(close,20))"}'}}]}).encode())
 
-    monkeypatch.setattr(urllib.request, "urlopen", response)
+    fake_provider(monkeypatch, response)
     _, usage = llm_proposal("trend", [])
     assert captured[0]["max_tokens"] == 700
     assert captured[0]["temperature"] == 0.4
@@ -74,7 +82,7 @@ def test_invalid_generation_options_fail_before_network(monkeypatch, key, value)
     monkeypatch.setenv("ALPHAOS_LLM_MODEL", "mock")
     monkeypatch.setenv("ALPHAOS_LLM_API_KEY", "test")
     monkeypatch.setenv(key, value)
-    monkeypatch.setattr(urllib.request, "urlopen", lambda *a, **k: pytest.fail("must not call provider"))
+    fake_provider(monkeypatch, lambda *a, **k: pytest.fail("must not call provider"))
     with pytest.raises(ValueError, match=key):
         llm_proposal("trend", [])
 
@@ -84,7 +92,7 @@ def test_empty_or_token_limited_completion_has_clear_failure(monkeypatch, conten
     monkeypatch.setenv("ALPHAOS_LLM_MODEL", "mock")
     monkeypatch.setenv("ALPHAOS_LLM_API_KEY", "test")
     response = {"choices": [{"message": {"content": content}, "finish_reason": finish_reason}]}
-    monkeypatch.setattr(urllib.request, "urlopen", lambda *a, **k: io.BytesIO(json.dumps(response).encode()))
+    fake_provider(monkeypatch, lambda *a, **k: io.BytesIO(json.dumps(response).encode()))
     with pytest.raises(ValueError, match="700-token|no text JSON"):
         llm_proposal("trend", [])
 
@@ -94,7 +102,7 @@ def test_malformed_llm_response_is_rejected(monkeypatch, content):
     monkeypatch.setenv("ALPHAOS_LLM_MODEL", "mock")
     monkeypatch.setenv("ALPHAOS_LLM_API_KEY", "test")
     response = {"choices": [{"message": {"content": content}}]}
-    monkeypatch.setattr(urllib.request, "urlopen", lambda *a, **k: io.BytesIO(json.dumps(response).encode()))
+    fake_provider(monkeypatch, lambda *a, **k: io.BytesIO(json.dumps(response).encode()))
     with pytest.raises(ValueError):
         llm_proposal("trend", [])
 

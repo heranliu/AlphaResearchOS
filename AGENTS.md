@@ -7,6 +7,12 @@ Use `uv run pytest -q`, `uv run ruff check src/alpharesearchos scripts`, and
 `node --check src/alpharesearchos/static/app.js` for validation. The release checks
 are `uv run python scripts/check_release.py` and `uv build`.
 
+For browser changes, install `uv sync --locked --extra dev --extra e2e` and
+`uv run playwright install chromium`, then run `uv run pytest -q tests/e2e`.
+The browser suite uses a local mocked model HTTP server. Run the installed-wheel
+smoke test after building with `ALPHAOS_TEST_WHEEL=1 uv run pytest -q
+tests/test_distribution.py`. Also check `node --check src/alpharesearchos/static/theme.js`.
+
 Preserve time ordering: fit on mature development labels, freeze candidate
 selection before holdout evaluation, and keep holdout outcomes out of proposal
 and review context. Record all attempts and budget consumption. Use deterministic

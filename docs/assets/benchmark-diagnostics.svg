@@ -3772,10 +3772,10 @@ L 981.504 637.776
    <text style="font-weight: 700; font-size: 22px; font-family: 'DejaVu Sans'; text-anchor: start; fill: #18303f" x="66.456" y="79.752562" transform="rotate(-0 66.456 79.752562)">Performance beyond the headline</text>
   </g>
   <g id="text_72">
-   <text style="font-size: 10.5px; font-family: 'DejaVu Sans'; text-anchor: start; fill: #627582" x="66.456" y="107.352759" transform="rotate(-0 66.456 107.352759)">2023-05-11 — 2026-09-17 · 841 sessions · 10 bps one-way costs · pre-Jev</text>
+   <text style="font-size: 10.5px; font-family: 'DejaVu Sans'; text-anchor: start; fill: #627582" x="66.456" y="107.352759" transform="rotate(-0 66.456 107.352759)">2023-05-11 — 2026-09-17 · 841 sessions · 10 bps one-way costs</text>
   </g>
   <g id="text_73">
-   <text style="font-size: 9.5px; font-family: 'DejaVu Sans'; text-anchor: start; fill: #627582" x="66.456" y="721.5768" transform="rotate(-0 66.456 721.5768)">Same dates and costs for all portfolios. Historical comparisons are descriptive; Jev was not used in this benchmark.</text>
+   <text style="font-size: 9.5px; font-family: 'DejaVu Sans'; text-anchor: start; fill: #627582" x="66.456" y="721.5768" transform="rotate(-0 66.456 721.5768)">Same dates and costs for all portfolios. Historical comparisons use the recorded holdout results.</text>
   </g>
   <g id="legend_1">
    <g id="line2d_61">

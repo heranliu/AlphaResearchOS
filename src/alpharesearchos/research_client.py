@@ -2,12 +2,9 @@
 from __future__ import annotations
 
 import json
-import re
-import time
-import urllib.error
-import urllib.request
 
 from .proposals import llm_settings
+from .provider_transport import chat_json
 
 
 def object_schema(properties):
@@ -67,41 +64,25 @@ def structured_call(instruction, context, schema, *, timeout):
     if settings.get("provider") == "codex_cli":
         from .codex_provider import codex_structured
         return codex_structured(prompt, schema, model=settings.get("codex_model", ""), timeout=timeout)
-    from .model_settings import _NoRedirect
-    token_field = settings.get("token_field", "max_completion_tokens")
-    if token_field not in {"max_completion_tokens", "max_tokens"}:
-        raise ValueError("Unsupported completion token parameter")
-    payload = {"model": settings["model"], token_field: 1800,
-               "messages": [{"role": "system", "content": "Return a JSON object matching this schema: " + json.dumps(schema)},
-                            {"role": "user", "content": prompt}]}
-    if settings.get("temperature") not in {None, ""}:
-        payload["temperature"] = float(settings["temperature"])
-    data = json.dumps(payload).encode()
-    if len(data) > 22200:
-        raise ValueError("Research HTTP request exceeds budget")
-    request = urllib.request.Request(settings["base_url"] + "/chat/completions", data=data,
-                                     headers={"Content-Type": "application/json", "Authorization": "Bearer " + settings["api_key"]})
-    started = time.monotonic()
-    try:
-        with urllib.request.build_opener(_NoRedirect()).open(request, timeout=max(.1, min(90, timeout))) as response:
-            raw = response.read(100001)
-        if len(raw) > 100000:
-            raise ValueError("Oversized model response")
-        result = json.loads(raw)
-        choice = result["choices"][0]
-        if choice.get("finish_reason") == "length":
-            raise ValueError("Model response exceeded completion budget")
-        content = choice["message"]["content"]
-        parsed = json.loads(re.sub(r"^```(?:json)?\s*|\s*```$", "", content.strip()))
-        if not isinstance(parsed, dict):
-            raise ValueError("Model must return a JSON object")
-        return parsed, {"provider": "openai_compatible", "model": settings["model"],
-                        "reported_total_tokens": result.get("usage", {}).get("total_tokens"),
-                        "request_bytes": len(data), "seconds": round(time.monotonic() - started, 3)}
-    except urllib.error.HTTPError as exc:
-        raise RuntimeError(f"Model HTTP {exc.code}; no automatic retry") from None
-    except (urllib.error.URLError, TimeoutError):
-        raise RuntimeError("Model connection failed or timed out; no automatic retry") from None
+    messages = [{"role": "system", "content": "Return a JSON object matching this schema: " + json.dumps(schema)},
+                {"role": "user", "content": prompt}]
+    return chat_json(settings, messages, completion_tokens=1800, timeout=timeout)
+
+
+def validate_proposal(value):
+    """Share the executable proposal contract with the explicit connection probe."""
+    from .predictive import validate_strategy
+
+    if not isinstance(value, dict) or set(value) != set(PROPOSAL_SCHEMA["properties"]):
+        raise ValueError("Strategy response has missing or unexpected fields")
+    for field, limit in [("name", 100), ("hypothesis", 1000), ("rationale", 1200)]:
+        if not isinstance(value.get(field), str) or not 1 <= len(value[field]) <= limit:
+            raise ValueError(f"Invalid strategy {field}")
+    params = value.get("model_params")
+    if not isinstance(params, dict) or set(params) != set(PROPOSAL_SCHEMA["properties"]["model_params"]["properties"]):
+        raise ValueError("Strategy model parameters have missing or unexpected fields")
+    validate_strategy(value)
+    return value
 
 
 def propose(context, *, timeout):
@@ -117,12 +98,14 @@ def propose(context, *, timeout):
         "Honor executable constraints. Seek stable excess returns over equal weight AFTER costs; investigate turnover and weak folds; do not merely repeat prior expressions. " \
         "No future test evidence is provided. Benchmark feedback is development-only."
     value, usage = structured_call(instruction, context, PROPOSAL_SCHEMA, timeout=timeout)
-    if set(value) != set(PROPOSAL_SCHEMA["properties"]):
-        raise ValueError("Strategy response has missing or unexpected fields")
-    for field, limit in [("name", 100), ("hypothesis", 1000), ("rationale", 1200)]:
-        if not isinstance(value.get(field), str) or not 1 <= len(value[field]) <= limit:
-            raise ValueError(f"Invalid strategy {field}")
-    return value, usage
+    return validate_proposal(value), usage
+
+
+def connection_probe(*, timeout):
+    """One proposal request, validated without data access or a research run."""
+    return propose({"direction": "Connection protocol check only. Propose one simple 20-day price momentum rank strategy. "
+                                 "No market evidence is supplied; do not claim measured returns.",
+                    "required_model": "rank", "constraints": {}}, timeout=timeout)
 
 
 def review(context, *, timeout):
@@ -132,9 +115,9 @@ def review(context, *, timeout):
         "Use revise for a concrete hypothesis/implementation mismatch and reject for invalid or unjustified claims that make selection unsafe. " \
         "Do not invent tests or observations. Suggest one falsifiable next research action. You cannot change measured metrics or waive constraints."
     value, usage = structured_call(instruction, context, REVIEW_SCHEMA, timeout=timeout)
-    if set(value) != set(REVIEW_SCHEMA["properties"]):
+    if not isinstance(value, dict) or set(value) != set(REVIEW_SCHEMA["properties"]):
         raise ValueError("Review response has missing or unexpected fields")
-    if value.get("decision") not in {"approve", "revise", "reject"}:
+    if not isinstance(value.get("decision"), str) or value["decision"] not in {"approve", "revise", "reject"}:
         raise ValueError("Invalid reviewer decision")
     for field in ["critique", "suggested_action"]:
         if not isinstance(value.get(field), str) or not 1 <= len(value[field]) <= 2000:

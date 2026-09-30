@@ -3,7 +3,8 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="color-scheme" content="dark">
+  <meta name="color-scheme" content="dark light">
+  <script src="/static/theme.js"></script>
   <title>AlphaResearchOS · 自动量化研究</title>
   <link rel="stylesheet" href="/static/style.css">
   <script src="/static/app.js" defer></script>
@@ -23,7 +24,7 @@
     <div class="sidebar-bottom"><span class="connection-dot" id="connection-dot"></span><span id="connection-state">连接本地研究引擎…</span><small id="version">LOCAL WORKSPACE</small></div>
   </aside>
   <main id="workspace">
-    <header class="topbar"><h1 id="page-title">自动研究</h1><span id="model-status" class="status neutral">正在读取模型状态</span></header>
+    <header class="topbar"><h1 id="page-title">自动研究</h1><div class="topbar-actions"><span id="model-status" class="status neutral">正在读取模型状态</span><button id="theme-toggle" class="theme-toggle" type="button" aria-label="切换颜色主题" title="切换颜色主题"><span id="theme-icon" aria-hidden="true">◐</span><span id="theme-label">主题</span></button></div></header>
     <div id="global-error" class="notice error" role="alert" hidden></div>
     <input id="dataset-file" type="file" accept=".csv,text/csv" hidden>
     <div id="dataset-import-message" class="notice" role="status" hidden></div>
@@ -88,6 +89,8 @@
         <section class="panel"><form id="settings-form" class="settings-form">
           <label class="form-field" for="settings-provider">模型提供方<select id="settings-provider" name="provider"><option value="openai_compatible">兼容 OpenAI 的 API</option><option value="codex_cli">本机 Codex</option></select></label>
           <div id="settings-api-fields" class="provider-fields">
+            <label class="form-field" for="settings-api-preset">API 预设<select id="settings-api-preset"><option value="custom">自定义兼容 API</option><option value="deepseek">DeepSeek</option><option value="gemini">Google Gemini</option><option value="ollama">Ollama · 本机</option></select></label>
+            <p id="settings-preset-note" class="field-note preset-note">预设填写连接地址与参数；模型名称由你选择。</p>
             <label class="form-field" for="settings-url">API Base URL<input id="settings-url" name="base_url" type="url" placeholder="https://api.example.com/v1" required></label>
             <label class="form-field" for="settings-model">模型名称<input id="settings-model" name="model" type="text" placeholder="填写服务商提供的模型 ID" required></label>
             <label class="form-field" for="settings-key">API 密钥 <span id="settings-key-status" class="small muted"></span><input id="settings-key" name="api_key" type="password" autocomplete="new-password" placeholder="留空保留已保存密钥"></label>
@@ -95,9 +98,9 @@
             <div class="form-grid"><label class="form-field" for="settings-token-field">Token 参数<select id="settings-token-field" name="token_field"><option value="max_completion_tokens">max_completion_tokens</option><option value="max_tokens">max_tokens</option></select></label><label class="form-field" for="settings-temperature">Temperature<input id="settings-temperature" name="temperature" type="number" min="0" max="2" step="0.1" placeholder="留空使用模型默认值"></label></div>
           </div>
           <div id="settings-codex-fields" class="provider-fields" hidden><label class="form-field" for="settings-codex-model">Codex 模型 <span class="small muted">可选</span><input id="settings-codex-model" name="codex_model" type="text" placeholder="使用本机 Codex 当前模型" disabled></label><p class="field-note">使用本机 Codex 当前登录账户，无需填写 API 密钥。</p></div>
-          <fieldset class="jev-settings">
-            <legend>Jev 决策复核 <span class="optional">可选</span></legend>
-            <label class="check-field"><input id="settings-jev-enabled" name="jev_enabled" type="checkbox">启用 Jev 决策复核</label>
+          <details id="settings-advanced-review" class="advanced-review"><summary>高级：附加复核 <span class="optional">可选</span></summary><fieldset class="jev-settings">
+            <legend class="visually-hidden">附加复核设置</legend>
+            <label class="check-field"><input id="settings-jev-enabled" name="jev_enabled" type="checkbox">启用附加决策复核</label>
             <p class="field-note">默认关闭。启用后，对已通过模型复核的候选追加一次结构化裁决；仅通过裁决的候选可进入最终筛选。</p>
             <div id="settings-jev-fields" class="provider-fields" hidden>
               <label class="form-field" for="settings-jev-url">Jev API Base URL<input id="settings-jev-url" name="jev_base_url" type="url" value="https://api.typesafe.ai/v1" disabled></label>
@@ -105,15 +108,24 @@
               <label class="form-field" for="settings-jev-key">Jev API 密钥 <span id="settings-jev-key-status" class="small muted"></span><input id="settings-jev-key" name="jev_api_key" type="password" autocomplete="new-password" placeholder="留空保留已保存密钥" disabled></label>
               <label class="check-field"><input id="settings-jev-clear-key" name="clear_jev_api_key" type="checkbox" disabled>清除现有 Jev 密钥</label>
               <label class="form-field" for="settings-jev-confidence">最低通过置信度 <span class="small muted">大于 0.5，最高 1</span><input id="settings-jev-confidence" name="jev_min_confidence" type="number" min="0.5" max="1" step="any" value="0.7" disabled></label>
-              <p class="field-note">Jev 请求计入运行的模型请求和 Token 预算。每个完整候选通常需 3 次请求，12 次请求最多完成 4 个完整候选。</p>
+              <p class="field-note">附加复核请求计入运行的模型请求和 Token 预算。每个完整候选通常需 3 次请求，12 次请求最多完成 4 个完整候选。</p>
             </div>
-          </fieldset>
+          </fieldset></details>
           <div class="toolbar-actions"><button id="settings-save" class="button primary" type="submit">保存配置</button><button id="settings-test" class="button secondary" type="button">测试连接</button></div>
           <p class="field-note">测试连接仅测试提案与复核模型，会发送一次请求；请先保存修改。</p>
         </form></section>
-        <section class="panel settings-status-panel"><div class="panel-heading"><h2>连接状态</h2><span id="settings-status" class="status neutral">未读取</span></div><div id="settings-codex-status" class="provider-status" hidden></div><div id="settings-message" class="settings-message muted" role="status">保存模型连接后，可运行自主研究。</div><div class="jev-connection"><div class="review-heading"><h3>Jev 决策复核</h3><span id="settings-jev-status" class="status neutral">未启用</span></div><p id="settings-jev-note" class="field-note" role="status">默认关闭，启用并保存配置后可测试。</p><button id="settings-jev-test" class="button secondary" type="button" disabled>测试 Jev 连接</button><p class="field-note">仅点击此按钮时发送一次 Jev 测试请求。</p><p id="settings-jev-message" class="field-note" role="status" hidden></p></div></section>
+        <section class="panel settings-status-panel"><div class="panel-heading"><h2>连接状态</h2><span id="settings-status" class="status neutral">未读取</span></div><div id="settings-codex-status" class="provider-status" hidden></div><div id="settings-message" class="settings-message muted" role="status">保存模型连接后，可运行自主研究。</div><details class="jev-connection"><summary>高级：附加复核连接</summary><div class="review-heading"><h3>连接状态</h3><span id="settings-jev-status" class="status neutral">未启用</span></div><p id="settings-jev-note" class="field-note" role="status">默认关闭，启用并保存配置后可测试。</p><button id="settings-jev-test" class="button secondary" type="button" disabled>测试附加复核连接</button><p class="field-note">仅点击此按钮时发送一次附加复核测试请求。</p><p id="settings-jev-message" class="field-note" role="status" hidden></p></details></section>
       </div>
     </section>
+    <dialog id="dataset-preview" class="dataset-preview" aria-labelledby="dataset-preview-title">
+      <div class="preview-heading"><div><span class="eyebrow">数据准备</span><h2 id="dataset-preview-title">导入前检查</h2></div><button id="dataset-cancel-import" class="icon-button" type="button" aria-label="关闭数据预览">×</button></div>
+      <p id="dataset-preview-name" class="preview-filename"></p>
+      <div id="dataset-preview-summary" class="preview-summary"></div>
+      <div id="dataset-preview-issues" class="preview-issues" aria-live="polite"></div>
+      <details class="preview-details"><summary>各资产覆盖范围</summary><div class="table-scroll"><table><thead><tr><th>资产</th><th>记录</th><th>交易日</th><th>日期范围</th><th>缺失交易日</th></tr></thead><tbody id="dataset-preview-coverage"></tbody></table></div></details>
+      <p id="dataset-preview-adjustment" class="field-note"></p>
+      <div class="preview-actions"><span id="dataset-preview-status" class="small muted"></span><button id="dataset-confirm-import" class="button primary" type="button" disabled>确认导入</button></div>
+    </dialog>
   </main>
 </body>
 </html>

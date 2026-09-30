@@ -71,7 +71,7 @@ assert.equal($('settings-jev-model').value, 'jev-1.13.0');
 applySettings({...configured, jev_enabled: true, jev_configured: false});
 assert.equal($('start-run').disabled, true);
 assert.equal($('settings-test').disabled, false);
-assert.match($('mode-note').textContent, /Jev.*配置不完整/);
+assert.match($('mode-note').textContent, /附加复核.*配置不完整/);
 applySettings({...configured, jev_enabled: true, jev_configured: true});
 assert.equal($('start-run').disabled, false);
 assert.match($('mode-note').textContent, /4 个完整候选/);
@@ -151,5 +151,5 @@ assert.match(container.textContent, /68.0% · 低于阈值/);
 assert.match(container.textContent, /假设一致性.*成本后支持.*滚动窗口一致性.*证据充分性/);
 assert.ok(container.textContent.includes(""" + json.dumps(summary) + r"""));
 assert.equal(globalThis.compromised, undefined);
-assert.equal(trialUsages({jev_usage: {model: 'jev-1.13.0'}})[0][0], 'Jev 裁决');
+assert.equal(trialUsages({jev_usage: {model: 'jev-1.13.0'}})[0][0], '附加裁决');
 """)

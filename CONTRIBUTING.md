@@ -25,6 +25,25 @@ uv run python scripts/check_release.py
 uv build
 ```
 
+Browser workflows and themes have a dedicated Chromium suite with a local model
+HTTP fixture. Install and run it with:
+
+```bash
+uv sync --locked --extra dev --extra market --extra e2e
+uv run playwright install chromium
+uv run pytest -q tests/e2e
+```
+
+To check the distribution in a fresh virtual environment after `uv build`:
+
+```bash
+ALPHAOS_TEST_WHEEL=1 uv run pytest -q tests/test_distribution.py
+```
+
+This uses the dependencies already present in uv's cache and performs no live
+model calls. The standard unit job excludes `tests/e2e`; the dedicated browser
+job installs Chromium and runs the complete browser suite.
+
 ## Pull requests
 
 Describe the user-visible result, the change, and how it was checked. Include a
