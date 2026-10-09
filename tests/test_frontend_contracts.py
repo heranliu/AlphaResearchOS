@@ -209,6 +209,127 @@ assert.match($('settings-message').textContent, /尚未保存/);
 """)
 
 
+BACKTEST_SETUP = r"""
+renderBacktest = report => calls.push(report);
+renderBacktestSelection = () => {};
+renderBacktestDataset = () => {};
+refreshBacktests = async () => {};
+const pending = [];
+api = () => new Promise((resolve, reject) => pending.push({resolve, reject}));
+"""
+
+
+def test_backtest_polls_cannot_replace_a_newer_report_or_skip_selected_configuration():
+    run_ui_contract(BACKTEST_SETUP + r"""
+const older = loadBacktest('run-a'), newer = loadBacktest('run-a');
+const completed = {id: 'run-a', status: 'completed', config: {dataset: 'saved.csv',
+  factor_ids: ['saved-factor'], cost_bps: 12}, factors: [{id: 'saved-factor'}]};
+pending[1].resolve(completed); await newer;
+assert.equal(state.backtestReport, completed);
+assert.equal($('backtest-dataset').value, 'saved.csv');
+assert.equal($('backtest-cost').value, '12');
+assert.deepEqual([...state.selectedFactors], ['saved-factor']);
+pending[0].resolve({id: 'run-a', status: 'running'}); await older;
+assert.equal(state.backtestReport, completed);
+assert.deepEqual(calls, [completed]);
+""")
+
+
+@pytest.mark.parametrize("reselect", [False, True])
+def test_backtest_reads_are_invalidated_when_selection_is_cleared_or_revisited(reselect):
+    run_ui_contract(BACKTEST_SETUP + "const reselect = " + json.dumps(reselect) + r""";
+const first = loadBacktest('run-a'), second = loadBacktest('run-b');
+const latest = loadBacktest(reselect ? 'run-a' : '');
+const completed = {id: 'run-a', status: 'completed'};
+if (reselect) pending[2].resolve(completed);
+await latest;
+pending[0].resolve({id: 'run-a', status: 'running'}); await first;
+pending[1].resolve({id: 'run-b', status: 'running'}); await second;
+assert.equal(state.selectedBacktestId, reselect ? 'run-a' : null);
+assert.equal(state.backtestReport, reselect ? completed : null);
+assert.deepEqual(calls, [reselect ? completed : {}]);
+""")
+
+
+def test_backtest_read_errors_only_surface_for_the_current_request():
+    run_ui_contract(BACKTEST_SETUP + r"""
+const older = loadBacktest('run-a'), newer = loadBacktest('run-a');
+pending[0].reject(new Error('outdated read failed')); await older;
+pending[1].reject(new Error('current read failed'));
+await assert.rejects(newer, /current read failed/);
+const cleared = loadBacktest('run-a');
+await loadBacktest('');
+pending[2].reject(new Error('cleared read failed')); await cleared;
+""")
+
+
+@pytest.mark.parametrize("provider", ["model", "jev"])
+@pytest.mark.parametrize("outcome", ["success", "failure", "error"])
+@pytest.mark.parametrize("change", ["save", "edit", "refresh"])
+def test_connection_results_cannot_update_changed_settings(provider, outcome, change):
+    run_ui_contract("const scenario = " + json.dumps({
+        "provider": provider, "outcome": outcome, "change": change,
+    }) + r""";
+const saved = {...configured, jev_enabled: true, jev_configured: true};
+applySettings(saved);
+const runTest = scenario.provider === 'model' ? testSettings : testJevSettings;
+const button = $(scenario.provider === 'model' ? 'settings-test' : 'settings-jev-test');
+const message = $(scenario.provider === 'model' ? 'settings-message' : 'settings-jev-message');
+let deliver, reject;
+api = (path, options) => path.endsWith('/test')
+  ? new Promise((resolve, fail) => {deliver = resolve; reject = fail;})
+  : Promise.resolve({...saved, base_url: 'https://new.example/v1', jev_base_url: 'https://new-jev.example/v1'});
+const testing = runTest();
+if (scenario.change === 'refresh') await loadSettings({discardChanges: true});
+else {
+  $('settings-url').value = 'https://new.example/v1';
+  $('settings-jev-url').value = 'https://new-jev.example/v1';
+  markSettingsDirty();
+  if (scenario.change === 'save') await saveSettings({preventDefault() {}});
+}
+const before = {message: message.textContent, hidden: message.hidden, className: message.className,
+  status: $('settings-status').textContent, statusClass: $('settings-status').className};
+if (scenario.outcome === 'error') reject(new Error('old endpoint failed'));
+else deliver({ok: scenario.outcome === 'success', message: 'old endpoint result', latency_ms: 4});
+await testing;
+assert.deepEqual({message: message.textContent, hidden: message.hidden, className: message.className,
+  status: $('settings-status').textContent, statusClass: $('settings-status').className}, before);
+assert.equal(button.disabled, scenario.change === 'edit');
+assert.doesNotMatch(button.textContent, /正在测试/);
+""")
+
+
+@pytest.mark.parametrize("provider", ["model", "jev"])
+def test_connection_tests_stay_disabled_during_pending_requests_and_saves(provider):
+    run_ui_contract("const provider = " + json.dumps(provider) + r""";
+const saved = {...configured, jev_enabled: true, jev_configured: true};
+applySettings(saved);
+const runTest = provider === 'model' ? testSettings : testJevSettings;
+const button = $(provider === 'model' ? 'settings-test' : 'settings-jev-test');
+const pending = [];
+api = (path, options) => {calls.push(path); return new Promise(resolve => pending.push(resolve));};
+const testing = runTest();
+renderProviderFields(); renderJevFields();
+assert.equal(button.disabled, true);
+const duplicate = runTest();
+assert.equal(calls.length, 1);
+await duplicate;
+const saving = saveSettings({preventDefault() {}});
+pending[0]({ok: true}); await testing;
+assert.equal(button.disabled, true);
+const duringSave = runTest();
+assert.equal(calls.length, 2);
+await duringSave;
+pending[1](saved); await saving;
+assert.equal(button.disabled, false);
+const secondTest = runTest();
+pending[2]({ok: true, message: 'current endpoint works'}); await secondTest;
+assert.equal(calls.length, 3);
+const message = $(provider === 'model' ? 'settings-message' : 'settings-jev-message');
+assert.match(message.textContent, /current endpoint works/);
+""")
+
+
 def test_calendar_scope_is_neutral_while_actionable_import_warnings_remain_visible():
     run_ui_contract(DATASET_SETUP + r"""
 const calendar = {code: 'calendar_scope', severity: 'warning', message: '日期覆盖只比较文件内的日期。'};

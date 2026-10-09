@@ -1,6 +1,6 @@
 "use strict";
 
-const state = {runs: [], datasets: [], report: null, selectedId: null, candidateId: null, llmConfigured: false, loading: false, submitting: false, requestSequence: 0, page: "research", factors: [], selectedFactors: new Set(), seedFactorIds: [], libraryDetailId: null, backtests: [], backtestReport: null, selectedBacktestId: null, backtestSubmitting: false, settings: null, settingsRevision: 0, settingsReadSequence: 0};
+const state = {runs: [], datasets: [], report: null, selectedId: null, candidateId: null, llmConfigured: false, loading: false, submitting: false, requestSequence: 0, page: "research", factors: [], selectedFactors: new Set(), seedFactorIds: [], libraryDetailId: null, backtests: [], backtestReport: null, selectedBacktestId: null, backtestSubmitting: false, backtestRequestSequence: 0, settings: null, settingsRevision: 0, settingsReadSequence: 0, settingsTesting: false};
 const $ = (id) => document.getElementById(id);
 const numeric = (value) => typeof value === "number" && Number.isFinite(value);
 const number = (value, digits = 2) => numeric(value) ? value.toFixed(digits) : "—";
@@ -827,11 +827,15 @@ async function refreshBacktests() {
 }
 
 async function loadBacktest(id) {
+  const sequence = ++state.backtestRequestSequence;
   if (!id) {state.selectedBacktestId = null; state.backtestReport = null; renderBacktest({}); return;}
-  const newSelection = state.selectedBacktestId !== id;
+  const newSelection = state.selectedBacktestId !== id || state.backtestReport?.id !== id;
   state.selectedBacktestId = id;
-  const report = await api(`/api/backtests/${encodeURIComponent(id)}`);
-  if (id !== state.selectedBacktestId) return;
+  const isCurrent = () => sequence === state.backtestRequestSequence && id === state.selectedBacktestId;
+  let report;
+  try {report = await api(`/api/backtests/${encodeURIComponent(id)}`);}
+  catch (error) {if (isCurrent()) throw error; return;}
+  if (!isCurrent()) return;
   const previous = state.backtestReport;
   state.backtestReport = report;
   if (newSelection) {
@@ -943,7 +947,7 @@ function renderProviderFields() {
   $("settings-model").required = !isCodex;
   $("settings-key").disabled = isCodex || $("settings-clear-key").checked;
   $("settings-codex-model").disabled = !isCodex;
-  $("settings-test").disabled = !state.settings?.configured || Boolean(state.settingsDirty);
+  $("settings-test").disabled = !state.settings?.configured || Boolean(state.settingsDirty || state.settingsTesting || state.settingsSaving);
   const target = $("settings-codex-status"); target.replaceChildren();
   const codex = state.settings?.codex || {};
   if (isCodex) {
@@ -967,7 +971,7 @@ function renderJevFields() {
   const confidence = Number($("settings-jev-confidence").value);
   $("settings-jev-confidence").setCustomValidity(enabled && confidence <= 0.5 ? "最低通过置信度必须大于 0.5。" : "");
   const configured = Boolean(state.settings?.jev_configured), dirty = Boolean(state.settingsDirty);
-  $("settings-jev-test").disabled = !state.settings?.jev_enabled || !configured || dirty || Boolean(state.jevTesting);
+  $("settings-jev-test").disabled = !state.settings?.jev_enabled || !configured || dirty || Boolean(state.jevTesting || state.settingsSaving);
   $("settings-jev-status").textContent = dirty ? "待保存" : !enabled ? "未启用" : configured ? "已配置" : "待配置";
   $("settings-jev-status").className = `status ${!dirty && enabled && configured ? "ok" : "neutral"}`;
   $("settings-jev-note").textContent = dirty ? "配置已修改，请统一保存后再测试。" : !enabled ? "附加复核未启用，研究使用原有提案与复核模型。" : configured ? "附加复核配置已保存，点击测试可检查连接。" : "附加复核已启用但配置不完整；请保存地址、模型和密钥后开始研究。";
@@ -976,6 +980,7 @@ function renderJevFields() {
 function markSettingsDirty() {
   state.settingsDirty = true;
   state.settingsRevision += 1;
+  if (state.settingsTesting) settingsMessage("配置已修改，请保存后重新测试。");
 }
 
 function applySettings(settings) {
@@ -1028,6 +1033,7 @@ async function saveSettings(event) {
   $("settings-save").disabled = true;
   state.settingsSaving = true;
   const revision = ++state.settingsRevision;
+  $("settings-test").disabled = true; $("settings-jev-test").disabled = true;
   try {
     const saved = await api("/api/settings", {method: "POST", body: JSON.stringify(payload)});
     if (revision === state.settingsRevision) {applySettings(saved); settingsMessage("配置已保存。");}
@@ -1039,36 +1045,50 @@ async function saveSettings(event) {
     }
   }
   catch (error) {settingsMessage(`保存失败：${error.message}`, true);}
-  finally {state.settingsSaving = false; $("settings-save").disabled = false;}
+  finally {state.settingsSaving = false; $("settings-save").disabled = false; renderProviderFields(); renderJevFields();}
 }
 
 async function testSettings() {
-  if (!state.settings?.configured || state.settingsDirty) return;
+  if (!state.settings?.configured || state.settingsDirty || state.settingsSaving || state.settingsTesting) return;
+  const revision = state.settingsRevision;
+  state.settingsTesting = true;
   $("settings-test").disabled = true; $("settings-test").textContent = "正在测试…";
   settingsMessage("正在向已保存的模型发送连接测试请求…");
   try {
     const result = await api("/api/settings/test", {method: "POST", body: "{}", timeoutMs: state.settings.provider === "codex_cli" ? 105000 : 20000});
+    if (revision !== state.settingsRevision) return;
     settingsMessage(`${result.message || (result.ok ? "连接成功" : "连接失败")}${numeric(result.latency_ms) ? ` · ${number(result.latency_ms, 0)} ms` : ""}`, !result.ok);
     $("settings-status").textContent = result.ok ? "连接正常" : "连接失败";
     $("settings-status").className = `status ${result.ok ? "ok" : "failed"}`;
-  } catch (error) {settingsMessage(`连接测试失败：${error.message}`, true); $("settings-status").textContent = "连接失败"; $("settings-status").className = "status failed";}
-  finally {$("settings-test").disabled = !state.settings?.configured || Boolean(state.settingsDirty); $("settings-test").textContent = "测试连接";}
+  } catch (error) {
+    if (revision !== state.settingsRevision) return;
+    settingsMessage(`连接测试失败：${error.message}`, true); $("settings-status").textContent = "连接失败"; $("settings-status").className = "status failed";
+  } finally {
+    state.settingsTesting = false;
+    $("settings-test").disabled = !state.settings?.configured || Boolean(state.settingsDirty || state.settingsSaving);
+    $("settings-test").textContent = "测试连接";
+  }
 }
 
 async function testJevSettings() {
-  if (!state.settings?.jev_enabled || !state.settings?.jev_configured || state.settingsDirty || state.jevTesting) return;
+  if (!state.settings?.jev_enabled || !state.settings?.jev_configured || state.settingsDirty || state.settingsSaving || state.jevTesting) return;
+  const revision = state.settingsRevision;
   state.jevTesting = true;
   $("settings-jev-test").disabled = true; $("settings-jev-test").textContent = "正在测试…";
   const message = $("settings-jev-message");
   message.hidden = false; message.className = "field-note"; message.textContent = "正在向已保存的附加复核连接发送一次测试请求…";
   try {
     const result = await api("/api/settings/jev/test", {method: "POST", body: "{}", timeoutMs: 20000});
+    if (revision !== state.settingsRevision) return;
     message.textContent = `${result.message || (result.ok ? "附加复核连接成功" : "附加复核连接失败")}${numeric(result.latency_ms) ? ` · ${number(result.latency_ms, 0)} ms` : ""}`;
     message.className = `field-note ${result.ok ? "" : "negative"}`;
-  } catch (error) {message.textContent = `附加复核连接测试失败：${error.message}`; message.className = "field-note negative";}
+  } catch (error) {
+    if (revision !== state.settingsRevision) return;
+    message.textContent = `附加复核连接测试失败：${error.message}`; message.className = "field-note negative";
+  }
   finally {
     state.jevTesting = false;
-    $("settings-jev-test").disabled = !state.settings?.jev_enabled || !state.settings?.jev_configured || Boolean(state.settingsDirty);
+    $("settings-jev-test").disabled = !state.settings?.jev_enabled || !state.settings?.jev_configured || Boolean(state.settingsDirty || state.settingsSaving);
     $("settings-jev-test").textContent = "测试 附加复核连接";
   }
 }

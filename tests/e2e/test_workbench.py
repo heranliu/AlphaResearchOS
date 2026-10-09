@@ -25,7 +25,8 @@ expect = playwright.expect
 @pytest.fixture(scope="module")
 def browser():
     with playwright.sync_playwright() as runtime:
-        instance = runtime.chromium.launch()
+        # An explicit override supports environments with Chromium already installed.
+        instance = runtime.chromium.launch(executable_path=os.environ.get("ALPHAOS_CHROMIUM_EXECUTABLE_PATH"))
         yield instance
         instance.close()
 
@@ -184,6 +185,58 @@ def test_preset_switch_does_not_reuse_saved_credentials(page, workspace):
     page.locator("#settings-api-preset").select_option("ollama")
     expect(page.locator("#settings-url")).to_have_value("http://localhost:11434/v1")
     expect(page.locator("#settings-key")).to_have_value("ollama")
+
+
+@pytest.mark.parametrize("provider", ["model", "jev"])
+def test_late_connection_result_does_not_validate_newly_saved_settings(page, workspace, provider):
+    connect_model(page, workspace)
+    prefix = "settings" if provider == "model" else "settings-jev"
+    if provider == "jev":
+        page.locator("#settings-advanced-review summary").click()
+        page.locator("#settings-jev-enabled").check()
+        page.locator("#settings-jev-url").fill(workspace.provider)
+        page.locator("#settings-jev-key").fill("browser-fixture-key")
+        page.locator("#settings-save").click()
+        expect(page.locator("#settings-jev-test")).to_be_enabled()
+        page.locator(".jev-connection summary").click()
+    pending = []
+    endpoint = "/api/settings/test" if provider == "model" else "/api/settings/jev/test"
+    page.route("**" + endpoint, lambda route: pending.append(route))
+    page.locator(f"#{prefix}-test").click()
+    expect(page.locator(f"#{prefix}-test")).to_have_text("正在测试…")
+    page.locator(f"#{prefix}-url").fill(workspace.provider + "/changed")
+    page.locator(f"#{prefix}-key").fill("browser-fixture-key")
+    page.locator("#settings-save").click()
+    expect(page.locator("#settings-message")).to_have_text("配置已保存。")
+    expect(page.locator(f"#{prefix}-test")).to_be_disabled()
+    assert len(pending) == 1
+    pending[0].fulfill(json={"ok": True, "message": "old endpoint result"})
+    expect(page.locator(f"#{prefix}-test")).to_be_enabled()
+    expect(page.locator("#settings-status")).to_have_text("已配置")
+    expect(page.locator("#settings-message")).to_have_text("配置已保存。")
+    expect(page.locator("#settings-jev-message")).to_be_hidden()
+    expect(page.locator(f"#{prefix}-message")).not_to_contain_text("old endpoint result")
+    assert len(workspace.calls) == 1
+
+
+def test_out_of_order_backtest_reads_keep_completed_report_and_configuration(page):
+    pending = []
+    completed = {"id": "browser-race", "status": "completed", "config": {"cost_bps": 12}}
+
+    def report(route):
+        pending.append(route)
+        if len(pending) > 1:
+            route.fulfill(json=completed)
+
+    page.route("**/api/backtests/browser-race", report)
+    navigate(page, "backtest")
+    page.evaluate("() => {window.backtestReads = [loadBacktest('browser-race'), loadBacktest('browser-race')];}")
+    expect(page.locator("#backtest-status")).to_have_text("已完成")
+    expect(page.locator("#backtest-cost")).to_have_value("12")
+    pending[0].fulfill(json={"id": "browser-race", "status": "running"})
+    page.evaluate("Promise.all(window.backtestReads)")
+    expect(page.locator("#backtest-status")).to_have_text("已完成")
+    expect(page.locator('#backtest-artifacts a[download="report.json"]')).to_be_visible()
 
 
 def test_research_pause_resume_export_library_and_backtest(page, workspace):

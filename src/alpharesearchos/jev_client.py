@@ -14,6 +14,8 @@ import time
 import urllib.error
 import urllib.request
 
+from .http_transport import bounded_read
+
 DEFAULT_BASE_URL = "https://api.typesafe.ai/v1"
 DEFAULT_MODEL = "jev-1.13.0"
 MAX_REQUEST_BYTES = 24000
@@ -183,7 +185,7 @@ def review_gate(context, *, settings, timeout):
     jev_api_key and jev_min_confidence. No key is included in returned metadata.
     The caller owns pre-request budget reservation and failure accounting.
     """
-    from .model_settings import _NoRedirect, validate_base_url
+    from .model_settings import validate_base_url
 
     try:
         base_url = validate_base_url(settings.get("jev_base_url", DEFAULT_BASE_URL))
@@ -223,10 +225,11 @@ def review_gate(context, *, settings, timeout):
     })
     started = time.monotonic()
     try:
-        with urllib.request.build_opener(_NoRedirect()).open(request, timeout=min(90, timeout)) as response:
-            raw = response.read(MAX_RESPONSE_BYTES + 1)
+        raw = bounded_read(request, timeout=min(90, timeout), max_bytes=MAX_RESPONSE_BYTES)
     except urllib.error.HTTPError as exc:
-        raise RuntimeError(f"Jev HTTP {exc.code}; no automatic retry") from None
+        status = exc.code
+        exc.close()
+        raise RuntimeError(f"Jev HTTP {status}; no automatic retry") from None
     except (urllib.error.URLError, OSError, http.client.HTTPException, ValueError, UnicodeError):
         raise RuntimeError("Jev connection failed or timed out; no automatic retry") from None
     if time.monotonic() - started > min(90, timeout):

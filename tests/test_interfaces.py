@@ -17,11 +17,11 @@ def isolate_generation_options(monkeypatch):
 
 
 def fake_provider(monkeypatch, callback):
-    class Opener:
-        def open(self, request, **kwargs):
-            return callback(request, **kwargs)
+    def read(request, *, timeout, max_bytes):
+        with callback(request, timeout=timeout) as response:
+            return response.read(max_bytes + 1)
 
-    monkeypatch.setattr(urllib.request, "build_opener", lambda *handlers: Opener())
+    monkeypatch.setattr("alpharesearchos.provider_transport.bounded_read", read)
 
 
 def test_llm_json_protocol_and_no_secret_in_failure(monkeypatch):

@@ -16,11 +16,17 @@ from alpharesearchos.proposals import llm_configured, llm_proposal, llm_settings
 @pytest.fixture(autouse=True)
 def isolated_environment(monkeypatch):
     for key in ["ALPHAOS_LLM_BASE_URL", "ALPHAOS_LLM_MODEL", "ALPHAOS_LLM_API_KEY", "OPENAI_API_KEY",
-                "ALPHAOS_LLM_TOKEN_FIELD", "ALPHAOS_LLM_TEMPERATURE"]:
+                "ALPHAOS_LLM_TOKEN_FIELD", "ALPHAOS_LLM_TEMPERATURE", "ALPHAOS_JEV_ENABLED",
+                "ALPHAOS_JEV_BASE_URL", "ALPHAOS_JEV_MODEL", "ALPHAOS_JEV_API_KEY", "TYPESAFE_API_KEY",
+                "ALPHAOS_JEV_MIN_CONFIDENCE"]:
         monkeypatch.delenv(key, raising=False)
     # This suite must never reach a real provider, even if a test forgets its mock.
     monkeypatch.setattr("urllib.request.urlopen", lambda *a, **k: pytest.fail("unexpected network call"))
     monkeypatch.setattr("urllib.request.build_opener", lambda *a, **k: pytest.fail("unexpected network call"))
+    monkeypatch.setattr("alpharesearchos.provider_transport.bounded_read",
+                        lambda *a, **k: pytest.fail("unexpected network call"))
+    monkeypatch.setattr("alpharesearchos.jev_client.bounded_read",
+                        lambda *a, **k: pytest.fail("unexpected network call"))
 
 
 def provider(**changes):
@@ -173,9 +179,9 @@ def test_llm_proposal_uses_scoped_settings_and_zero_temperature(monkeypatch):
 
     def response(request, **kwargs):
         captured.append(request)
-        return io.BytesIO(json.dumps({"choices": [{"message": {"content":
-            '{"name":"x","hypothesis":"y","expression":"rank(close)"}'}}]}).encode())
-    fake_opener(monkeypatch, response)
+        return json.dumps({"choices": [{"message": {"content":
+            '{"name":"x","hypothesis":"y","expression":"rank(close)"}'}}]}).encode()
+    fake_transport(monkeypatch, response)
     with provider_context(provider(temperature=0, token_field="max_tokens")):
         _, usage = llm_proposal("trend", [])
     body = json.loads(captured[0].data)
@@ -185,11 +191,9 @@ def test_llm_proposal_uses_scoped_settings_and_zero_temperature(monkeypatch):
     assert "secret-never-return" not in json.dumps(usage)
 
 
-def fake_opener(monkeypatch, callback):
-    class Opener:
-        def open(self, request, **kwargs):
-            return callback(request, **kwargs)
-    monkeypatch.setattr("urllib.request.build_opener", lambda *a, **k: Opener())
+def fake_transport(monkeypatch, callback):
+    monkeypatch.setattr("alpharesearchos.provider_transport.bounded_read", callback)
+    monkeypatch.setattr("alpharesearchos.jev_client.bounded_read", callback)
 
 
 def test_explicit_connection_probe_uses_real_protocol_but_never_returns_body(tmp_path, monkeypatch):
@@ -199,11 +203,12 @@ def test_explicit_connection_probe_uses_real_protocol_but_never_returns_body(tmp
 
     def respond(request, **kwargs):
         captured.append(request)
+        assert kwargs == {"timeout": 15, "max_bytes": 100000}
         proposal = {"name": "动量", "hypothesis": "secret-never-return", "features": ["ret(close,20)"],
                     "model": "rank", "model_params": {"alpha": 1, "train_window": 504, "retrain_every": 63,
                                                       "horizon": 5, "smoothing": 3}, "rationale": "连接检查"}
-        return io.BytesIO(json.dumps({"model": "secret-never-return", "choices": [{"message": {"content": json.dumps(proposal)}}]}).encode())
-    fake_opener(monkeypatch, respond)
+        return json.dumps({"model": "secret-never-return", "choices": [{"message": {"content": json.dumps(proposal)}}]}).encode()
+    fake_transport(monkeypatch, respond)
     result = store.test_connection()
     assert result["ok"] and result["model"] == "manual-model"
     assert result["latency_ms"] >= 0
@@ -228,11 +233,11 @@ def test_connection_failures_redact_provider_messages(tmp_path, monkeypatch, kin
         if kind == "connection":
             raise urllib.error.URLError("secret-never-return")
         if kind == "empty":
-            return io.BytesIO(b'{"choices":[{"message":{"content":null}}]}')
+            return b'{"choices":[{"message":{"content":null}}]}'
         if kind == "plain_text":
-            return io.BytesIO(b'{"choices":[{"message":{"content":"OK"}}]}')
-        return io.BytesIO(b'secret-never-return')
-    fake_opener(monkeypatch, respond)
+            return b'{"choices":[{"message":{"content":"OK"}}]}'
+        return b'secret-never-return'
+    fake_transport(monkeypatch, respond)
     result = store.test_connection()
     assert not result["ok"]
     assert "secret-never-return" not in json.dumps(result)
@@ -284,6 +289,56 @@ def test_new_endpoint_accepts_an_explicit_replacement_key(tmp_path):
     store.update(provider())
     assert store.update({"base_url": "https://new.example/v1", "api_key": "new-service-key"})["configured"]
     assert store.resolve()["api_key"] == "new-service-key"
+
+
+@pytest.mark.parametrize("key_source", ["saved", "ALPHAOS_JEV_API_KEY", "TYPESAFE_API_KEY"])
+@pytest.mark.parametrize("blank_key", [None, "", "   "])
+def test_jev_endpoint_change_without_new_key_blocks_requests(tmp_path, monkeypatch, key_source, blank_key):
+    monkeypatch.setenv("ALPHAOS_JEV_BASE_URL", "https://previous.example/v1")
+    if key_source != "saved":
+        monkeypatch.setenv(key_source, "old-jev-secret")
+    store = SettingsStore(tmp_path)
+    store.update(provider(jev_enabled=True, **({"jev_api_key": "old-jev-secret"} if key_source == "saved" else {})))
+    assert store.public_config()["jev_configured"]
+    # A saved key must not reappear through the environment after being cleared.
+    if key_source == "saved":
+        monkeypatch.setenv("ALPHAOS_JEV_API_KEY", "fallback-jev-secret")
+    patch = {"jev_base_url": "https://new.example/v1"}
+    if blank_key is not None:
+        patch["jev_api_key"] = blank_key
+    public = store.update(patch)
+    requests = []
+
+    def respond(request, **kwargs):
+        requests.append(request)
+        return b"{}"
+
+    fake_transport(monkeypatch, respond)
+    reopened = SettingsStore(tmp_path)
+    assert not reopened.test_jev_connection()["ok"]
+    assert requests == [], "Changing the Jev endpoint must not send the old credential to the new service"
+    assert not public["jev_configured"] and not public["jev_api_key_set"]
+    assert reopened.resolve()["jev_api_key"] == ""
+    assert json.loads(store.path.read_text())["jev_api_key"] == ""
+    assert public["configured"] and reopened.resolve()["api_key"] == "secret-never-return"
+
+
+@pytest.mark.parametrize("url", ["https://provider.example/v1/", "https://PROVIDER.example:443/v1"])
+def test_equivalent_jev_endpoint_and_blank_key_preserve_existing_secret(tmp_path, url):
+    store = SettingsStore(tmp_path)
+    store.update(provider(jev_base_url="https://provider.example/v1", jev_api_key="old-jev-secret"))
+    assert store.update({"jev_base_url": url, "jev_api_key": ""})["jev_configured"]
+    assert store.resolve()["jev_api_key"] == "old-jev-secret"
+    assert store.resolve()["api_key"] == "secret-never-return"
+
+
+def test_new_jev_endpoint_accepts_an_explicit_replacement_key(tmp_path):
+    store = SettingsStore(tmp_path)
+    store.update(provider(jev_api_key="old-jev-secret"))
+    public = store.update({"jev_base_url": "https://new.example/v1", "jev_api_key": "new-jev-secret"})
+    assert public["jev_configured"]
+    assert store.resolve()["jev_api_key"] == "new-jev-secret"
+    assert store.resolve()["api_key"] == "secret-never-return"
 
 
 def test_jev_is_optional_and_its_secret_is_managed_independently(tmp_path, monkeypatch):
