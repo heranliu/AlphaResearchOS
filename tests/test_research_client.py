@@ -10,7 +10,7 @@ import urllib.error
 import pytest
 
 from alpharesearchos import codex_provider, research_client
-from alpharesearchos.model_settings import SettingsStore, _NoRedirect
+from alpharesearchos.model_settings import SettingsStore
 from alpharesearchos.proposals import provider_context
 from alpharesearchos.provider_transport import ModelRequestError
 
@@ -38,6 +38,7 @@ def no_external_requests(monkeypatch):
 
     monkeypatch.setattr("urllib.request.urlopen", forbidden)
     monkeypatch.setattr("urllib.request.build_opener", forbidden)
+    monkeypatch.setattr("alpharesearchos.provider_transport.bounded_read", forbidden)
     monkeypatch.setattr(codex_provider.subprocess, "run", forbidden)
     monkeypatch.setattr(codex_provider.subprocess, "Popen", forbidden)
     monkeypatch.setattr(codex_provider, "codex_status", lambda **kwargs: {
@@ -50,18 +51,15 @@ def no_external_requests(monkeypatch):
 def transport(monkeypatch, body=None, *, error=None):
     calls = []
 
-    class Opener:
-        def open(self, request, **kwargs):
-            calls.append((request, kwargs))
-            if error:
-                raise error
-            return io.BytesIO(body if isinstance(body, bytes) else json.dumps(response() if body is None else body).encode())
+    def read(request, *, timeout, max_bytes):
+        calls.append((request, {"timeout": timeout}))
+        assert max_bytes == 100000
+        if error:
+            raise error
+        raw = body if isinstance(body, bytes) else json.dumps(response() if body is None else body).encode()
+        return raw[:max_bytes + 1]
 
-    def build(*handlers):
-        assert len(handlers) == 1 and isinstance(handlers[0], _NoRedirect)
-        return Opener()
-
-    monkeypatch.setattr("urllib.request.build_opener", build)
+    monkeypatch.setattr("alpharesearchos.provider_transport.bounded_read", read)
     return calls
 
 

@@ -260,11 +260,13 @@ class SettingsStore:
                         raise ValueError(f"Cannot set and clear {key} in the same request")
                 if clear:
                     patch[key] = ""
-            if "base_url" in patch and not patch.get("api_key"):
+            for url_field, key_field in (("base_url", "api_key"), ("jev_base_url", "jev_api_key")):
+                if url_field not in patch or patch.get(key_field):
+                    continue
                 from .proposals import environment_settings
 
-                previous_url = saved.get("base_url", environment_settings(raw_jev=True)["base_url"])
-                new_endpoint = _endpoint_identity(patch["base_url"])
+                previous_url = saved.get(url_field, environment_settings(raw_jev=True)[url_field])
+                new_endpoint = _endpoint_identity(patch[url_field])
                 try:
                     changed = _endpoint_identity(previous_url) != new_endpoint
                 except ValueError:
@@ -272,7 +274,7 @@ class SettingsStore:
                 if changed:
                     # Persist the empty override: an environment key also belongs
                     # to the old service and must never follow an endpoint change.
-                    patch["api_key"] = ""
+                    patch[key_field] = ""
             effective = self._effective({**saved, **patch})
             # Persist only explicitly managed fields; unmodified env values stay fallback.
             updated = {key: effective[key] for key in set(saved) | set(patch)}

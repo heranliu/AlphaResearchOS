@@ -15,6 +15,7 @@ SECRET = "never-expose-provider-secret"
 @pytest.fixture(autouse=True)
 def no_live_transport(monkeypatch):
     monkeypatch.setattr("urllib.request.build_opener", lambda *a, **k: pytest.fail("unexpected network call"))
+    monkeypatch.setattr(jev_client, "bounded_read", lambda *a, **k: pytest.fail("unexpected network call"))
 
 
 def context():
@@ -47,18 +48,15 @@ def reply(*, picked="approve", confidence=.9, probabilities=None, check=.9):
 def transport(monkeypatch, result):
     calls = []
 
-    class Opener:
-        def open(self, request, **kwargs):
-            calls.append((request, kwargs))
-            if isinstance(result, Exception):
-                raise result
-            return io.BytesIO(result if isinstance(result, bytes) else json.dumps(result).encode())
+    def read(request, *, timeout, max_bytes):
+        calls.append((request, {"timeout": timeout}))
+        assert max_bytes == jev_client.MAX_RESPONSE_BYTES
+        if isinstance(result, Exception):
+            raise result
+        raw = result if isinstance(result, bytes) else json.dumps(result).encode()
+        return raw[:max_bytes + 1]
 
-    def build(*handlers):
-        assert len(handlers) == 1 and isinstance(handlers[0], _NoRedirect)
-        return Opener()
-
-    monkeypatch.setattr("urllib.request.build_opener", build)
+    monkeypatch.setattr(jev_client, "bounded_read", read)
     return calls
 
 

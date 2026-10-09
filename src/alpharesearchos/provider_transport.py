@@ -13,6 +13,8 @@ import time
 import urllib.error
 import urllib.request
 
+from .http_transport import bounded_read
+
 
 class ModelRequestError(RuntimeError):
     """Safe transport diagnostics, optionally carrying only an HTTP status."""
@@ -90,7 +92,7 @@ def _usage(value):
 
 def chat_json(settings, messages, *, completion_tokens, timeout, max_request_bytes=22200):
     """Return one JSON object and normalized usage; never call a second endpoint."""
-    from .model_settings import _NoRedirect, validate_base_url
+    from .model_settings import validate_base_url
 
     base_url = validate_base_url(settings.get("base_url", ""))
     model, key = settings.get("model"), settings.get("api_key")
@@ -113,8 +115,7 @@ def chat_json(settings, messages, *, completion_tokens, timeout, max_request_byt
     request.add_unredirected_header("Authorization", "Bearer " + key)
     started = time.monotonic()
     try:
-        with urllib.request.build_opener(_NoRedirect()).open(request, timeout=min(90, timeout)) as response:
-            raw = response.read(100001)
+        raw = bounded_read(request, timeout=min(90, timeout), max_bytes=100000)
     except urllib.error.HTTPError as exc:
         status = exc.code
         exc.close()
@@ -144,6 +145,8 @@ def chat_json(settings, messages, *, completion_tokens, timeout, max_request_byt
         raise ValueError("Model returned no text JSON; check model support and completion budget")
     fenced = re.fullmatch(r"```(?:json)?\s*(.*?)\s*```", content.strip(), flags=re.DOTALL)
     parsed = json_object(fenced.group(1) if fenced else content)
+    if time.monotonic() - started > min(90, timeout):
+        raise ModelRequestError("Model request exceeded its time budget; no automatic retry")
     return parsed, {"provider": "openai_compatible", "model": model, **_usage(result.get("usage")),
                     "request_bytes": len(body), "seconds": round(time.monotonic() - started, 3),
                     "generation_options": options}

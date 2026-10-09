@@ -45,12 +45,14 @@ def test_wheel_installs_and_serves_outside_the_source_checkout(tmp_path):
     assert "serve" in run([str(python), "-I", "-m", "alpharesearchos", "--help"])
     output = run([str(python), "-I", "-c", '''
 import importlib.metadata
+import http.server
 import json
 import pathlib
 import threading
 import urllib.request
 import alpharesearchos
 from alpharesearchos import codex_provider, server
+from alpharesearchos.provider_transport import chat_json
 assert "site-packages" in alpharesearchos.__file__
 assert alpharesearchos.__version__ == importlib.metadata.version("alpharesearchos")
 codex_provider.codex_status = lambda **kwargs: {"available": False, "authenticated": False}
@@ -70,6 +72,41 @@ finally:
     service.server_close()
     service.research_executor.shutdown(wait=True)
     thread.join(timeout=5)
+
+requests = []
+class Provider(http.server.BaseHTTPRequestHandler):
+    def do_POST(self):
+        payload = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+        requests.append((self.path, payload))
+        body = json.dumps({"choices": [{"finish_reason": "stop", "message": {
+            "content": json.dumps({"ok": True})}}]}).encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def log_message(self, *args):
+        pass
+
+provider = http.server.HTTPServer(("127.0.0.1", 0), Provider)
+provider_thread = threading.Thread(target=provider.serve_forever, daemon=True)
+provider_thread.start()
+try:
+    result, usage = chat_json(
+        {"base_url": f"http://127.0.0.1:{provider.server_port}/v1",
+         "model": "installed-wheel-mock", "api_key": "installed-wheel-dummy-key"},
+        [{"role": "user", "content": "Return a JSON object."}],
+        completion_tokens=20, timeout=10,
+    )
+    assert result == {"ok": True}
+    assert len(requests) == 1 and requests[0][0] == "/v1/chat/completions"
+    assert requests[0][1]["model"] == usage["model"] == "installed-wheel-mock"
+finally:
+    provider.shutdown()
+    provider.server_close()
+    provider_thread.join(timeout=5)
+assert not provider_thread.is_alive()
 print("installed-wheel-ok")
 '''])
     assert "installed-wheel-ok" in output
