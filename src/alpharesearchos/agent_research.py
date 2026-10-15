@@ -52,8 +52,12 @@ def enforce_constraints(strategy, constraints, metrics=None):
                 if not isinstance(node.args[1], ast.Constant) or node.args[1].value != required:
                     raise ValueError(f"Every factor window must equal {required}")
     ceiling = constraints.get("max_turnover")
-    if metrics is not None and ceiling is not None and metrics["avg_turnover"] > ceiling:
-        raise ValueError(f"Development turnover exceeds the {ceiling:g} constraint")
+    if metrics is not None and ceiling is not None:
+        avg_turnover = metrics.get("avg_turnover")
+        if avg_turnover is None:
+            raise ValueError("Development turnover missing from metrics; constraint cannot be checked")
+        if avg_turnover > ceiling:
+            raise ValueError(f"Development turnover exceeds the {ceiling:g} constraint")
 
 
 def development_scores(strategy, dev, folds, signal_lag=2):
