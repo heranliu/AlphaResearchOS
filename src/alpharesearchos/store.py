@@ -40,7 +40,10 @@ def atomic_json(path: Path, value):
             os.unlink(temp)
 
 
-def read_json(path: Path):
+def read_json(path: Path, max_bytes: int = 10_000_000):
+    size = path.stat().st_size
+    if size > max_bytes:
+        raise ValueError(f"JSON file exceeds {max_bytes} bytes; refuse to load")
     return json.loads(path.read_text(encoding="utf-8"))
 
 
