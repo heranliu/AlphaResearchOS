@@ -201,7 +201,7 @@ def review_gate(context, *, settings, timeout):
             raise ValueError("Invalid API key")
         threshold = _probability(settings.get("jev_min_confidence", .7))
         if threshold <= .5:
-            raise ValueError("Invalid threshold")
+            raise ValueError("jev_min_confidence threshold must be greater than 0.5")
         if type(timeout) not in (int, float) or not math.isfinite(timeout) or timeout <= 0:
             raise ValueError("Invalid timeout")
     except (ValueError, TypeError, AttributeError, OverflowError):
