@@ -39,7 +39,12 @@ def default_model():
     config = Path(os.environ.get("CODEX_HOME", str(Path.home() / ".codex"))) / "config.toml"
     try:
         value = tomllib.loads(config.read_text()).get("model")
-        return value if isinstance(value, str) and 0 < len(value) <= 200 and not any(ord(c) < 32 for c in value) else None
+        if not (isinstance(value, str) and 0 < len(value) <= 200 and not any(ord(c) < 32 for c in value)):
+            return None
+        # Additional sanitize: reject path separators, whitespace padding
+        if "/" in value or "\\" in value or value != value.strip():
+            return None
+        return value.strip()
     except (OSError, ValueError):
         return None
 
