@@ -95,7 +95,10 @@ def _asset_count(source: dict) -> Any:
 
 
 def _display_metadata(config: dict, source: dict, split: dict) -> dict:
-    return {"config": config, "data": {key: source[key] for key in
+    display_config = dict(config)
+    if "signal_lag" not in display_config:
+        display_config["signal_lag"] = config.get("signal_lag", 2)
+    return {"config": display_config, "data": {key: source[key] for key in
             ("label", "kind", "start", "end", "rows", "assets") if key in source}, "split": split}
 
 
