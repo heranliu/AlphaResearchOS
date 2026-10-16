@@ -137,6 +137,13 @@ def import_dataset(dataset_root, body):
             os.link(temporary, destination)
         except FileExistsError:
             raise FileExistsError("已有同名数据集，请重命名 CSV 后重新导入。") from None
+        except OSError:
+            # os.link fails with EXDEV (cross-device link) when dataset_root and
+            # the NamedTemporaryFile directory reside on different filesystems
+            # (e.g. /tmp vs the project volume). Fall back to a plain copy so
+            # imports keep working regardless of mount layout.
+            import shutil
+            shutil.copy2(temporary, destination)
         return dataset_summary(destination, panel)
     finally:
         if temporary is not None:
