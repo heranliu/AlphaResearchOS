@@ -249,6 +249,13 @@ def download_yahoo(symbols: list[str], start: str, end: str, destination: Path):
         raise RuntimeError("Install market support: pip install '.[market]'") from exc
     if not 3 <= len(set(symbols)) <= 100:
         raise ValueError("Choose 3–100 unique symbols")
+    for symbol in set(symbols):
+        if not isinstance(symbol, str) or not symbol.strip():
+            raise ValueError("Each symbol must be a nonempty string")
+        if len(symbol) > 32:
+            raise ValueError(f"Symbol exceeds 32 characters: {symbol}")
+        if not re.fullmatch(r"[A-Za-z0-9.\-]{1,32}", symbol):
+            raise ValueError(f"Symbol contains invalid characters: {symbol}")
     series = {}
     for symbol in sorted(set(symbols)):
         bars = yf.Ticker(symbol).history(start=start, end=end, auto_adjust=True, actions=False, timeout=20)
