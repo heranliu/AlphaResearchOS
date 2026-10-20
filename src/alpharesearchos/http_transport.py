@@ -62,8 +62,14 @@ def bounded_read(request, *, timeout, max_bytes):
 def _worker():
     from .model_settings import _NoRedirect
 
+    # Defensive cap: reject payloads larger than 1 MiB. The parent never sends
+    # more than a few KiB, so a huge payload means either a buggy caller or a
+    # malicious attempt to exhaust the worker's memory.
+    raw = sys.stdin.buffer.read(1024 * 1024 + 1)
+    if len(raw) > 1024 * 1024:
+        return b"ERROR\nHTTP worker payload exceeded 1 MiB limit"
     try:
-        payload = json.load(sys.stdin)
+        payload = json.loads(raw)
         remaining = payload["deadline"] - time.monotonic()
         if remaining <= 0:
             return b"ERROR\n"
